@@ -13,186 +13,118 @@ except ImportError:
 
 class SettingsWindow(tk.Toplevel):
     """
-    A Toplevel window for configuring application settings, with scrolling,
-    integer inputs for pauses/ORP, dark mode toggle, chunk size, and improved styling.
+    Settings window with context layout option.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
         self.config = config_manager
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
-        self.geometry("550x800") # Adjusted initial size slightly
-        # self.transient(parent) # Keep REMOVED: Decouple from hidden parent
+        self.geometry("550x800") # Keep size
+        # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.settings_vars = {} # Holds original DoubleVars/StringVars/IntVars from config
-        self.ui_vars = {}       # Holds IntVars used specifically for UI Spinboxes (ms, %)
+        self.settings_vars = {} # Holds original vars from config
+        self.ui_vars = {}       # Holds IntVars used for UI Spinboxes (ms, %)
 
         # --- Styling ---
         style = ttk.Style(self)
-        try:
-            # Attempt to use a potentially more modern theme
-            style.theme_use('clam') # 'clam', 'alt', 'default', 'classic'
-        except tk.TclError:
-            print("Hinweis: 'clam' ttk-Theme nicht verfügbar, verwende Standard.")
-            # Fallback to default if 'clam' is not available
-            style.theme_use('default')
-
-        # Configure styles with padding
-        style.configure("TLabel", padding=(5, 5))
-        style.configure("TEntry", padding=(5, 5))
-        style.configure("TButton", padding=(5, 5))
-        style.configure("TCheckbutton", padding=(0, 5))
-        style.configure("TScale", padding=(5, 5))
-        style.configure("TSpinbox", padding=(5, 5))
-        style.configure("TLabelframe.Label", padding=(5, 2))
-        style.configure("TLabelframe", padding=10)
-        style.configure("Vertical.TScrollbar", padding=0) # No padding for scrollbar itself
+        try: style.theme_use('clam')
+        except tk.TclError: print("Hinweis: 'clam' ttk-Theme nicht verfügbar."); style.theme_use('default')
+        style.configure("TLabel", padding=(5, 5)); style.configure("TEntry", padding=(5, 5))
+        style.configure("TButton", padding=(5, 5)); style.configure("TCheckbutton", padding=(0, 5))
+        style.configure("TRadiobutton", padding=(0, 5)) # Style for Radiobuttons
+        style.configure("TScale", padding=(5, 5)); style.configure("TSpinbox", padding=(5, 5))
+        style.configure("TLabelframe.Label", padding=(5, 2)); style.configure("TLabelframe", padding=10)
+        style.configure("Vertical.TScrollbar", padding=0)
 
         # --- Create Scrollable Area ---
-        # 1. Outer frame to hold canvas and scrollbar
-        scrollable_outer_frame = ttk.Frame(self)
-        scrollable_outer_frame.pack(expand=True, fill="both")
-
-        # 2. Canvas widget
-        self.canvas = tk.Canvas(scrollable_outer_frame, borderwidth=0, highlightthickness=0)
-        self.canvas.pack(side="left", fill="both", expand=True)
-
-        # 3. Scrollbar
-        scrollbar = ttk.Scrollbar(scrollable_outer_frame, orient="vertical", command=self.canvas.yview, style="Vertical.TScrollbar")
-        scrollbar.pack(side="right", fill="y")
-
-        # 4. Configure canvas scrolling
+        scrollable_outer_frame = ttk.Frame(self); scrollable_outer_frame.pack(expand=True, fill="both")
+        self.canvas = tk.Canvas(scrollable_outer_frame, borderwidth=0, highlightthickness=0); self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(scrollable_outer_frame, orient="vertical", command=self.canvas.yview, style="Vertical.TScrollbar"); scrollbar.pack(side="right", fill="y")
         self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.main_frame = ttk.Frame(self.canvas, padding="15"); self.main_frame_id = self.canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+        self.main_frame.bind("<Configure>", self._on_frame_configure); self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.bind_mousewheel(self.canvas); self.bind_mousewheel(self.main_frame)
 
-        # 5. Create the *inner* frame that will hold the actual content
-        # This frame goes INSIDE the canvas
-        self.main_frame = ttk.Frame(self.canvas, padding="15")
-
-        # 6. Add the inner frame to the canvas using create_window
-        self.main_frame_id = self.canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
-
-        # --- Bind events for scrolling ---
-        self.main_frame.bind("<Configure>", self._on_frame_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        # Bind mouse wheel scrolling (platform-dependent)
-        self.bind_mousewheel(self.canvas)
-        self.bind_mousewheel(self.main_frame) # Bind to inner frame too
-
-
-        # --- Populate the *inner* frame (self.main_frame) ---
+        # --- Populate the inner frame ---
         self._populate_settings_frame()
 
         # --- Final steps ---
-        self._update_font_preview()
-        # Update labels initially
-        self._update_wpm_label()
-        self._update_orp_label()
-        self.wait_visibility()
-        self.focus_set()
-        self.grab_set()
+        self._update_font_preview(); self._update_wpm_label(); self._update_orp_label()
+        self.wait_visibility(); self.focus_set(); self.grab_set()
 
     def bind_mousewheel(self, widget):
-        """Binds mouse wheel scroll events for cross-platform compatibility."""
-        # Bind to the widget itself and its children recursively for better coverage
-        widget.bind_all("<MouseWheel>", self._on_mousewheel, add='+') # Windows
-        widget.bind_all("<Button-4>", self._on_mousewheel, add='+')   # Linux up
-        widget.bind_all("<Button-5>", self._on_mousewheel, add='+')   # Linux down
-        # MacOS binding might need adjustment based on Tk version/config
-        widget.bind_all("<MouseWheel>", self._on_mousewheel, add='+') # Basic macOS
+        widget.bind_all("<MouseWheel>", self._on_mousewheel, add='+'); widget.bind_all("<Button-4>", self._on_mousewheel, add='+'); widget.bind_all("<Button-5>", self._on_mousewheel, add='+')
 
     def _on_mousewheel(self, event):
-        """Handles mouse wheel scroll events."""
-        # Determine scroll direction and amount based on platform
         delta = 0
-        if hasattr(event, 'num') and event.num == 4: # Linux up
-            delta = -1
-        elif hasattr(event, 'num') and event.num == 5: # Linux down
-            delta = 1
-        elif hasattr(event, 'delta'): # Windows and macOS
+        if hasattr(event, 'num') and event.num == 4: delta = -1
+        elif hasattr(event, 'num') and event.num == 5: delta = 1
+        elif hasattr(event, 'delta'):
              if event.delta > 0: delta = -1
              elif event.delta < 0: delta = 1
-        # Fallback for some macOS trackpads? Requires testing.
+        if delta != 0: self.canvas.yview_scroll(delta, "units")
 
-        if delta != 0:
-             self.canvas.yview_scroll(delta, "units")
-
-    def _on_frame_configure(self, event=None):
-        """Updates the scroll region when the inner frame size changes."""
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
+    def _on_frame_configure(self, event=None): self.canvas.configure(scrollregion=self.canvas.bbox("all"))
     def _on_canvas_configure(self, event=None):
-        """Updates the inner frame's width to match the canvas width."""
-        if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists():
-             canvas_width = self.canvas.winfo_width()
-             self.canvas.itemconfig(self.main_frame_id, width=canvas_width)
-
+        if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists(): self.canvas.itemconfig(self.main_frame_id, width=self.canvas.winfo_width())
 
     def _populate_settings_frame(self):
-        """Creates and places all the setting widgets inside self.main_frame."""
-
         # --- WPM Section ---
-        wpm_frame = ttk.LabelFrame(self.main_frame, text="Lesegeschwindigkeit", padding="15")
-        wpm_frame.pack(fill="x", pady=(0, 15)) # Increased bottom margin
-        self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm"))
-        self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
+        wpm_frame = ttk.LabelFrame(self.main_frame, text="Lesegeschwindigkeit", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15))
+        self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm")); self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
         ttk.Label(wpm_frame, text="WPM:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
-        wpm_scale = ttk.Scale(wpm_frame, from_=50, to=1500, orient="horizontal", variable=self.settings_vars["wpm"])
-        wpm_scale.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        wpm_spinbox = ttk.Spinbox(wpm_frame, from_=50, to=1500, increment=10, textvariable=self.settings_vars["wpm"], width=6)
-        wpm_spinbox.grid(row=0, column=2, sticky="w", padx=5, pady=5)
-        self.wpm_label = ttk.Label(wpm_frame, text="", width=8, anchor="e") # Text set by trace
-        self.wpm_label.grid(row=0, column=3, sticky="e", padx=(5, 0), pady=5)
+        wpm_scale = ttk.Scale(wpm_frame, from_=50, to=1500, orient="horizontal", variable=self.settings_vars["wpm"]); wpm_scale.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        wpm_spinbox = ttk.Spinbox(wpm_frame, from_=50, to=1500, increment=10, textvariable=self.settings_vars["wpm"], width=6); wpm_spinbox.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.wpm_label = ttk.Label(wpm_frame, text="", width=8, anchor="e"); self.wpm_label.grid(row=0, column=3, sticky="e", padx=(5, 0), pady=5)
         wpm_frame.columnconfigure(1, weight=1)
 
         # --- Chunk Size Section ---
-        chunk_frame = ttk.LabelFrame(self.main_frame, text="Wortgruppengröße (Chunking)", padding="15")
-        chunk_frame.pack(fill="x", pady=(0, 15))
+        chunk_frame = ttk.LabelFrame(self.main_frame, text="Wortgruppengröße (Chunking)", padding="15"); chunk_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["chunk_size"] = tk.IntVar(value=self.config.get("chunk_size"))
         ttk.Label(chunk_frame, text="Wörter pro Anzeige:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
-        chunk_spinbox = ttk.Spinbox(chunk_frame, from_=1, to=10, increment=1, textvariable=self.settings_vars["chunk_size"], width=4) # Range 1-10 words
-        chunk_spinbox.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        chunk_spinbox = ttk.Spinbox(chunk_frame, from_=1, to=10, increment=1, textvariable=self.settings_vars["chunk_size"], width=4); chunk_spinbox.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         ttk.Label(chunk_frame, text="(ORP nur bei 1 aktiv)").grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
         # --- Pauses Section ---
-        pause_frame = ttk.LabelFrame(self.main_frame, text="Pausen (Millisekunden)", padding="15")
-        pause_frame.pack(fill="x", pady=(0, 15))
-        self.settings_vars["pause_punctuation"] = tk.DoubleVar(value=self.config.get("pause_punctuation"))
-        self.settings_vars["pause_comma"] = tk.DoubleVar(value=self.config.get("pause_comma"))
-        self.settings_vars["pause_paragraph"] = tk.DoubleVar(value=self.config.get("pause_paragraph"))
-        self.ui_vars["pause_punctuation_ms"] = tk.IntVar(value=int(self.config.get("pause_punctuation") * 1000))
-        self.ui_vars["pause_comma_ms"] = tk.IntVar(value=int(self.config.get("pause_comma") * 1000))
-        self.ui_vars["pause_paragraph_ms"] = tk.IntVar(value=int(self.config.get("pause_paragraph") * 1000))
+        pause_frame = ttk.LabelFrame(self.main_frame, text="Pausen (Millisekunden)", padding="15"); pause_frame.pack(fill="x", pady=(0, 15))
+        self.settings_vars["pause_punctuation"] = tk.DoubleVar(value=self.config.get("pause_punctuation")); self.settings_vars["pause_comma"] = tk.DoubleVar(value=self.config.get("pause_comma")); self.settings_vars["pause_paragraph"] = tk.DoubleVar(value=self.config.get("pause_paragraph"))
+        self.ui_vars["pause_punctuation_ms"] = tk.IntVar(value=int(self.config.get("pause_punctuation") * 1000)); self.ui_vars["pause_comma_ms"] = tk.IntVar(value=int(self.config.get("pause_comma") * 1000)); self.ui_vars["pause_paragraph_ms"] = tk.IntVar(value=int(self.config.get("pause_paragraph") * 1000))
         pause_spinbox_width = 6; pause_increment = 100; pause_max = 5000
         ttk.Label(pause_frame, text="Bei Satzende (.,!,?):").grid(row=0, column=0, sticky="w", pady=5)
-        pause_punct_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_punctuation_ms"], width=pause_spinbox_width)
-        pause_punct_spinbox.grid(row=0, column=1, sticky="w", pady=5, padx=5)
+        pause_punct_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_punctuation_ms"], width=pause_spinbox_width); pause_punct_spinbox.grid(row=0, column=1, sticky="w", pady=5, padx=5)
         ttk.Label(pause_frame, text="ms").grid(row=0, column=2, sticky="w", padx=5, pady=5)
         ttk.Label(pause_frame, text="Bei Komma (,):").grid(row=1, column=0, sticky="w", pady=5)
-        pause_comma_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_comma_ms"], width=pause_spinbox_width)
-        pause_comma_spinbox.grid(row=1, column=1, sticky="w", pady=5, padx=5)
+        pause_comma_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_comma_ms"], width=pause_spinbox_width); pause_comma_spinbox.grid(row=1, column=1, sticky="w", pady=5, padx=5)
         ttk.Label(pause_frame, text="ms").grid(row=1, column=2, sticky="w", padx=5, pady=5)
         ttk.Label(pause_frame, text="Bei Absatz:").grid(row=2, column=0, sticky="w", pady=5)
-        pause_para_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_paragraph_ms"], width=pause_spinbox_width)
-        pause_para_spinbox.grid(row=2, column=1, sticky="w", pady=5, padx=5)
+        pause_para_spinbox = ttk.Spinbox(pause_frame, from_=0, to=pause_max, increment=pause_increment, textvariable=self.ui_vars["pause_paragraph_ms"], width=pause_spinbox_width); pause_para_spinbox.grid(row=2, column=1, sticky="w", pady=5, padx=5)
         ttk.Label(pause_frame, text="ms").grid(row=2, column=2, sticky="w", padx=5, pady=5)
 
         # --- Appearance Section ---
-        appearance_frame = ttk.LabelFrame(self.main_frame, text="Erscheinungsbild", padding="15")
-        appearance_frame.pack(fill="x", pady=(0, 15))
+        appearance_frame = ttk.LabelFrame(self.main_frame, text="Erscheinungsbild", padding="15"); appearance_frame.pack(fill="x", pady=(0, 15))
+        # Dark Mode
         self.settings_vars["dark_mode"] = tk.BooleanVar(value=self.config.get("dark_mode"))
-        dark_mode_check = ttk.Checkbutton(appearance_frame, text="Dark Mode aktivieren (im Lesefenster)", variable=self.settings_vars["dark_mode"])
-        dark_mode_check.pack(anchor="w", pady=2)
+        dark_mode_check = ttk.Checkbutton(appearance_frame, text="Dark Mode aktivieren (im Lesefenster)", variable=self.settings_vars["dark_mode"]);
+        dark_mode_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(2, 5))
+        # Show Context
+        self.settings_vars["show_context"] = tk.BooleanVar(value=self.config.get("show_context"))
+        show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (vorheriges/nächstes Wort)", variable=self.settings_vars["show_context"]);
+        show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
+        # Context Layout - NEU
+        self.settings_vars["context_layout"] = tk.StringVar(value=self.config.get("context_layout"))
+        ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0)) # Indent slightly
+        context_vert_radio = ttk.Radiobutton(appearance_frame, text="Vertikal", variable=self.settings_vars["context_layout"], value="vertical")
+        context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2))
+        context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal (deaktiviert ORP)", variable=self.settings_vars["context_layout"], value="horizontal")
+        context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2))
+
 
         # --- Font & Colors Section ---
-        font_frame = ttk.LabelFrame(self.main_frame, text="Farben & Schriftart (Hell-Modus)", padding="15")
-        font_frame.pack(fill="x", pady=(0, 15))
+        font_frame = ttk.LabelFrame(self.main_frame, text="Farben & Schriftart (Hell-Modus)", padding="15"); font_frame.pack(fill="x", pady=(0, 15))
         ttk.Label(font_frame, text="Hinweis: Diese Farben gelten für den Hell-Modus.").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0,10))
-        self.settings_vars["font_family"] = tk.StringVar(value=self.config.get("font_family"))
-        self.settings_vars["font_size"] = tk.IntVar(value=self.config.get("font_size"))
-        self.settings_vars["font_color"] = tk.StringVar(value=self.config.get("font_color"))
-        self.settings_vars["highlight_color"] = tk.StringVar(value=self.config.get("highlight_color"))
-        self.settings_vars["background_color"] = tk.StringVar(value=self.config.get("background_color"))
+        self.settings_vars["font_family"] = tk.StringVar(value=self.config.get("font_family")); self.settings_vars["font_size"] = tk.IntVar(value=self.config.get("font_size")); self.settings_vars["font_color"] = tk.StringVar(value=self.config.get("font_color")); self.settings_vars["highlight_color"] = tk.StringVar(value=self.config.get("highlight_color")); self.settings_vars["background_color"] = tk.StringVar(value=self.config.get("background_color"))
         ttk.Label(font_frame, text="Schriftart:").grid(row=1, column=0, sticky="w", pady=5)
         available_fonts = sorted(font.families()); combo_state = "readonly"; font_combo = ttk.Combobox(font_frame, textvariable=self.settings_vars["font_family"], values=available_fonts, width=25, state=combo_state); font_combo.grid(row=1, column=1, columnspan=2, sticky="ew", padx=5, pady=5); font_combo.bind("<<ComboboxSelected>>", self._update_font_preview)
         if combo_state != "readonly": self.settings_vars["font_family"].trace_add("write", self._update_font_preview)
@@ -215,7 +147,7 @@ class SettingsWindow(tk.Toplevel):
         orp_frame = ttk.LabelFrame(self.main_frame, text="Optimal Recognition Point (ORP)", padding="15"); orp_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["orp_position"] = tk.DoubleVar(value=self.config.get("orp_position")); self.ui_vars["orp_position_percent"] = tk.IntVar(value=int(self.config.get("orp_position") * 100)); self.ui_vars["orp_position_percent"].trace_add("write", self._update_orp_label)
         self.settings_vars["enable_orp"] = tk.BooleanVar(value=self.config.get("enable_orp"))
-        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1)", variable=self.settings_vars["enable_orp"]); orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1 & vert. Kontext)", variable=self.settings_vars["enable_orp"]); orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         ttk.Label(orp_frame, text="Position (%):").grid(row=1, column=0, sticky="w", pady=5)
         orp_spinbox = ttk.Spinbox(orp_frame, from_=0, to=100, increment=1, textvariable=self.ui_vars["orp_position_percent"], width=5); orp_spinbox.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.orp_label = ttk.Label(orp_frame, text="", width=5, anchor="e"); self.orp_label.grid(row=1, column=2, sticky="e", padx=(5, 0), pady=5)
@@ -391,7 +323,7 @@ class SettingsWindow(tk.Toplevel):
     def save_and_close(self):
         """Saves all settings (converting UI vars back) and closes the window."""
         try:
-            # Convert UI IntVars back to original DoubleVars before saving
+            # Convert UI IntVars back to original DoubleVars/IntVars/StringVars before saving
             orp_percent = self.ui_vars["orp_position_percent"].get()
             self.settings_vars["orp_position"].set(max(0.0, min(1.0, orp_percent / 100.0)))
             pause_punct_ms = self.ui_vars["pause_punctuation_ms"].get()
@@ -406,19 +338,26 @@ class SettingsWindow(tk.Toplevel):
                 value = None
                 try: value = var.get()
                 except (tk.TclError, ValueError): messagebox.showerror("Ungültiger Wert", f"Konnte Wert für '{key}' nicht lesen.", parent=self); return
+                # Validate based on key
                 if key == "wpm":
-                     if not isinstance(value, int) or not (50 <= value <= 1500): messagebox.showerror("Ungültiger Wert", f"WPM muss eine ganze Zahl zwischen 50 und 1500 sein.", parent=self); return
+                     if not isinstance(value, int) or not (50 <= value <= 1500): messagebox.showerror("Ungültiger Wert", f"WPM: 50-1500.", parent=self); return
                 elif key == "chunk_size":
-                     if not isinstance(value, int) or not (1 <= value <= 10): messagebox.showerror("Ungültiger Wert", f"Wortgruppengröße muss eine ganze Zahl zwischen 1 und 10 sein.", parent=self); return
+                     if not isinstance(value, int) or not (1 <= value <= 10): messagebox.showerror("Ungültiger Wert", f"Wortgruppe: 1-10.", parent=self); return
                 elif key == "font_size":
-                     if not isinstance(value, int) or not (8 <= value <= 120): messagebox.showerror("Ungültiger Wert", f"Schriftgröße muss eine ganze Zahl zwischen 8 und 120 sein.", parent=self); return
+                     if not isinstance(value, int) or not (8 <= value <= 120): messagebox.showerror("Ungültiger Wert", f"Schriftgröße: 8-120.", parent=self); return
                 elif key == "orp_position":
-                     if not isinstance(value, float) or not (0.0 <= value <= 1.0): messagebox.showerror("Ungültiger Wert", f"ORP Position (intern) muss eine Zahl zwischen 0.0 und 1.0 sein.", parent=self); return
+                     if not isinstance(value, float) or not (0.0 <= value <= 1.0): messagebox.showerror("Ungültiger Wert", f"ORP Position: 0.0-1.0.", parent=self); return
                 elif key in ["pause_punctuation", "pause_comma", "pause_paragraph"]:
-                     if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert (intern) für '{key}' muss eine positive Zahl sein.", parent=self); return
-                elif key == "dark_mode":
-                     if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"Dark Mode muss An/Aus sein.", parent=self); return
+                     if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert für '{key}': >= 0.", parent=self); return
+                elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top"]:
+                     if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"'{key}' muss An/Aus sein.", parent=self); return
+                elif key == "context_layout": # Validate context layout
+                     if value not in ["vertical", "horizontal"]: messagebox.showerror("Ungültiger Wert", f"'{key}' muss 'vertical' oder 'horizontal' sein.", parent=self); return
+                # Add other validations if needed...
+
+                # Set validated value in config manager
                 self.config.set(key, value)
+
             self.config.save_settings()
             self.on_close()
         except Exception as e:
