@@ -20,9 +20,9 @@ def get_appdata_path(filename="speed_reader_settings.json"):
 # --- Standardeinstellungen ---
 DEFAULT_SETTINGS = {
     "wpm": 300,
-    "pause_punctuation": 0.5, # Sekunden
-    "pause_comma": 0.2,       # Sekunden
-    "pause_paragraph": 0.8,   # Sekunden
+    "pause_punctuation": 0.2, # Sekunden
+    "pause_comma": 0.1,       # Sekunden
+    "pause_paragraph": 0.2,   # Sekunden
     "font_family": "Arial",
     "font_size": 48,
     "font_color": "#000000",
@@ -30,7 +30,7 @@ DEFAULT_SETTINGS = {
     "background_color": "#F0F0F0",
     "hotkey": "<ctrl>+<alt>+r",
     "enable_orp": True,
-    "orp_position": 0.3,      # 0.0 - 1.0
+    "orp_position": 0.5,      # 0.0 - 1.0
     "reader_borderless": False,
     "reader_always_on_top": True,
     "hide_main_window": True,
@@ -39,7 +39,9 @@ DEFAULT_SETTINGS = {
     "show_context": False,
     "context_layout": "vertical",
     "run_on_startup": False,
-    "initial_delay_ms": 1500  # NEU: Startverzögerung in ms
+    "initial_delay_ms": 150,
+    "word_length_threshold": 7, # NEU: Schwelle für längere Wörter
+    "extra_ms_per_char": 10      # NEU: Extra ms pro Zeichen über Schwelle
 }
 SETTINGS_FILE = get_appdata_path()
 
@@ -63,8 +65,8 @@ class ConfigManager:
             else: print(f"Settings file not found: {self.filename}. Using defaults.")
 
             # Ensure correct types
-            # Added initial_delay_ms
-            for key in ['wpm', 'font_size', 'chunk_size', 'initial_delay_ms']:
+            # Added word_length_threshold, extra_ms_per_char
+            for key in ['wpm', 'font_size', 'chunk_size', 'initial_delay_ms', 'word_length_threshold', 'extra_ms_per_char']:
                 if key in settings: settings[key] = int(settings[key])
             for key in ['pause_punctuation', 'pause_comma', 'pause_paragraph', 'orp_position']:
                  if key in settings: settings[key] = float(settings[key])
@@ -79,7 +81,9 @@ class ConfigManager:
 
         # Ensure valid ranges post-load or from defaults
         if settings.get("chunk_size", 1) < 1: settings["chunk_size"] = 1
-        if settings.get("initial_delay_ms", 1500) < 0: settings["initial_delay_ms"] = 0 # Cannot be negative
+        if settings.get("initial_delay_ms", 1500) < 0: settings["initial_delay_ms"] = 0
+        if settings.get("word_length_threshold", 8) < 0: settings["word_length_threshold"] = 0
+        if settings.get("extra_ms_per_char", 8) < 0: settings["extra_ms_per_char"] = 0
 
         return settings
 
@@ -89,6 +93,8 @@ class ConfigManager:
             # Ensure valid ranges before saving
             if self.settings.get("chunk_size", 1) < 1: self.settings["chunk_size"] = 1
             if self.settings.get("initial_delay_ms", 1500) < 0: self.settings["initial_delay_ms"] = 0
+            if self.settings.get("word_length_threshold", 8) < 0: self.settings["word_length_threshold"] = 0
+            if self.settings.get("extra_ms_per_char", 8) < 0: self.settings["extra_ms_per_char"] = 0
             if self.settings.get("context_layout") not in ["vertical", "horizontal"]:
                  self.settings["context_layout"] = self.defaults["context_layout"]
 
