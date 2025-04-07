@@ -19,7 +19,7 @@ class ReadingWindow(tk.Toplevel):
     """
     RSVP window with context display (vertical/horizontal), enhanced navigation,
     Canvas ORP alignment (fixed point), chunking, dark mode, restart,
-    close on enter at end, initial delay.
+    close on enter at end, initial delay, and fixed initial display position.
     """
     def __init__(self, parent, config_manager):
         super().__init__(parent)
@@ -89,9 +89,9 @@ class ReadingWindow(tk.Toplevel):
         """Applies font, color, and theme settings."""
         is_dark = self.config.get("dark_mode")
         bg_color = DARK_BG if is_dark else self.config.get("background_color")
-        self.font_color = DARK_FG if is_dark else self.config.get("font_color") # Store class attribute
-        self.highlight_color = DARK_HIGHLIGHT if is_dark else self.config.get("highlight_color") # Store class attribute
-        self.context_font_color = CONTEXT_FG_DARK if is_dark else CONTEXT_FG_LIGHT # Store context color
+        self.font_color = DARK_FG if is_dark else self.config.get("font_color")
+        self.highlight_color = DARK_HIGHLIGHT if is_dark else self.config.get("highlight_color")
+        self.context_font_color = CONTEXT_FG_DARK if is_dark else CONTEXT_FG_LIGHT
         status_bg = DARK_STATUS_BG if is_dark else "lightgrey"; status_fg = DARK_STATUS_FG if is_dark else "black"
         prog_trough = DARK_PROGRESS_TROUGH if is_dark else 'lightgrey'; prog_bar = DARK_PROGRESS_BAR if is_dark else 'blue'
         font_family = self.config.get("font_family"); font_size = self.config.get("font_size")
@@ -109,7 +109,7 @@ class ReadingWindow(tk.Toplevel):
         except tk.TclError: pass
         self.progress_style.configure("custom.Horizontal.TProgressbar", troughcolor=prog_trough, background=prog_bar)
 
-        if self.display_items: self.display_item()
+        # Don't display item here directly, wait for start sequence
         self.update_status_bar()
 
     def _generate_display_items(self):
@@ -134,17 +134,42 @@ class ReadingWindow(tk.Toplevel):
                     item_index = len(self.display_items); self.display_items.append(" ".join(current_chunk_words))
                     self.item_to_word_start_index[item_index] = start_idx_for_current_chunk; current_chunk_words = []
 
+    def _calculate_delay_ms_for_item(self, item_index):
+        """Calculates the display duration in ms for the item at the given index."""
+        if item_index < 0 or item_index >= len(self.display_items): return 10
+        item = self.display_items[item_index]
+        base_delay_s = calculate_delay(self.config.get("wpm")); extra_pause_s = 0.0
+        pause_punct_s = self.config.get("pause_punctuation"); pause_comma_s = self.config.get("pause_comma"); pause_para_s = self.config.get("pause_paragraph")
+        if item == "__PARAGRAPH__": extra_pause_s = pause_para_s; total_delay_s = extra_pause_s
+        else:
+            words_in_item = len(item.split())
+            visible_item = item.rstrip(); last_visible_char = visible_item[-1] if visible_item else ''
+            if last_visible_char in ('.', '!', '?', ':', ';'): extra_pause_s = pause_punct_s
+            elif last_visible_char == ',': extra_pause_s = pause_comma_s
+            total_delay_s = (words_in_item * base_delay_s) + extra_pause_s
+        return max(10, int(total_delay_s * 1000))
+
     def start_reading(self, text):
-        """Processes text, generates items, displays first item, then starts reading after delay."""
+        """Processes text, generates items, then starts reading sequence after delay."""
         self.raw_words = preprocess_text(text)
         if not self.raw_words: messagebox.showinfo("Leerer Text", "Kein Text zum Lesen gefunden.", parent=self); self.close_window(); return
         self._generate_display_items()
         if not self.display_items: messagebox.showinfo("Leerer Text", "Keine anzeigbaren Wörter nach Verarbeitung gefunden.", parent=self); self.close_window(); return
-        self.restart_reading(update_ui=False); self.update_display_settings()
-        self.current_item_index = 0; self.display_item(); self.update_progress(); self.update_status_bar()
-        print(f"Scheduling reading start after {INITIAL_DELAY_MS}ms delay...")
+
+        self.restart_reading(update_ui=False) # Reset state
+        self.update_display_settings() # Apply theme/fonts
+        self.current_item_index = 0 # Ensure we start at index 0
+        self.update_progress() # Show initial progress (0)
+        self.update_status_bar() # Show initial status (e.g., "Block 1 / ...")
+        # Clear canvas initially
+        self.word_display_canvas.delete("all")
+
+        # --- Schedule the *first* call to schedule_next_item after delay ---
+        initial_delay = self.config.get("initial_delay_ms")
+        print(f"Scheduling reading start after {initial_delay}ms delay...")
         if self.reading_job: self.after_cancel(self.reading_job)
-        self.reading_job = self.after(INITIAL_DELAY_MS, self.schedule_next_item)
+        # This call will display item 0 after the delay
+        self.reading_job = self.after(initial_delay, self.schedule_next_item)
 
     def restart_reading(self, event=None, update_ui=True):
         """Resets reading to the beginning."""
@@ -153,36 +178,40 @@ class ReadingWindow(tk.Toplevel):
         if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
         if not self.display_items: return
         self.progress_bar.config(maximum=len(self.display_items))
+
         if update_ui:
-            self.display_item(); self.update_status_bar()
-            self.reading_job = self.after(INITIAL_DELAY_MS, self.schedule_next_item)
+            # Don't display item immediately, clear canvas instead
+            self.word_display_canvas.delete("all")
+            self.update_status_bar()
+            # Schedule the first call to schedule_next_item after delay
+            initial_delay = self.config.get("initial_delay_ms") # Read delay from config
+            self.reading_job = self.after(initial_delay, self.schedule_next_item)
+
+    # Remove _transition_to_item_1 if it exists
 
     def schedule_next_item(self):
-        """Schedules the display of the next item."""
+        """Displays current item, calculates its delay, and schedules the next call."""
         if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
         if self.paused: self.update_status_bar(); return
+
+        # Check if we are past the end *before* displaying
         if self.current_item_index >= len(self.display_items):
             self.display_item("--- Ende ---"); self.progress_var.set(len(self.display_items)); self.update_status_bar(); self.at_end = True; return
 
+        # --- Display current item and update progress ---
         self.at_end = False
-        self.display_item(); self.update_progress() # Display item BEFORE calculating its delay
-        current_item = self.display_items[self.current_item_index]
-        base_delay_s = calculate_delay(self.config.get("wpm")); extra_pause_s = 0.0; words_in_item = 0
-        pause_punct_s = self.config.get("pause_punctuation"); pause_comma_s = self.config.get("pause_comma"); pause_para_s = self.config.get("pause_paragraph")
+        self.display_item() # Display item at current_item_index
+        self.update_progress()
+        self.update_status_bar() # Update status bar reflecting item just displayed
 
-        if current_item == "__PARAGRAPH__":
-            extra_pause_s = pause_para_s; total_delay_s = extra_pause_s
-        else:
-            words_in_item = len(current_item.split())
-            visible_item = current_item.rstrip(); last_visible_char = visible_item[-1] if visible_item else ''
-            if last_visible_char in ('.', '!', '?', ':', ';'): extra_pause_s = pause_punct_s
-            elif last_visible_char == ',': extra_pause_s = pause_comma_s
-            total_delay_s = (words_in_item * base_delay_s) + extra_pause_s
+        # --- Calculate delay for the item just displayed ---
+        actual_delay_ms = self._calculate_delay_ms_for_item(self.current_item_index)
 
-        actual_delay_ms = max(10, int(total_delay_s * 1000))
-        self.current_item_index += 1 # Increment AFTER calculating delay for current item
+        # --- Schedule the NEXT call ---
+        # Increment index *after* calculating delay for current item
+        self.current_item_index += 1
+        # Schedule this function again to handle the next item after the delay
         self.reading_job = self.after(actual_delay_ms, self.schedule_next_item)
-        self.update_status_bar() # Update status bar reflecting processed item
 
 
     def display_item(self, item=None):
@@ -190,72 +219,75 @@ class ReadingWindow(tk.Toplevel):
         item_to_display = ""; is_special_message = item is not None
         prev_item_context = ""; next_item_context = ""
         safe_current_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
+        if self.at_end: safe_current_idx = len(self.display_items) - 1
 
         if not is_special_message:
-            if 0 <= safe_current_idx < len(self.display_items):
-                item_to_display = self.display_items[safe_current_idx]
-                if item_to_display == "__PARAGRAPH__": item_to_display = ""
-                if self.config.get("show_context"):
-                    prev_idx = safe_current_idx - 1
-                    if 0 <= prev_idx < len(self.display_items):
-                         prev_item_context = self.display_items[prev_idx]
-                         if prev_item_context == "__PARAGRAPH__": prev_item_context = ""
-                    next_idx = safe_current_idx + 1
-                    if 0 <= next_idx < len(self.display_items):
-                         next_item_context = self.display_items[next_idx]
-                         if next_item_context == "__PARAGRAPH__": next_item_context = ""
+            if 0 <= self.current_item_index < len(self.display_items):
+                 item_to_display = self.display_items[self.current_item_index]
+                 if item_to_display == "__PARAGRAPH__": item_to_display = ""
+            else: item_to_display = ""
+            if self.config.get("show_context"):
+                prev_idx = safe_current_idx - 1
+                if 0 <= prev_idx < len(self.display_items):
+                     prev_item_context = self.display_items[prev_idx]
+                     if prev_item_context == "__PARAGRAPH__": prev_item_context = ""
+                next_idx = safe_current_idx + 1
+                if self.current_item_index < len(self.display_items) -1 and 0 <= next_idx < len(self.display_items):
+                     next_item_context = self.display_items[next_idx]
+                     if next_item_context == "__PARAGRAPH__": next_item_context = ""
         else: item_to_display = item
 
         canvas = self.word_display_canvas; canvas.delete("all")
         if not self.widget_font: self.update_display_settings();
         if not self.widget_font: self.widget_font = font.nametofont("TkDefaultFont")
-        try: canvas_width = canvas.winfo_width(); canvas_height = canvas.winfo_height(); center_x = canvas_width / 2; center_y = canvas_height / 2
-        except tk.TclError: return
+
+        try:
+            # --- NEU: Force update and get dimensions ---
+            canvas.update_idletasks() # Process pending geometry changes
+            canvas_width = canvas.winfo_width(); canvas_height = canvas.winfo_height()
+            center_x = canvas_width / 2; center_y = canvas_height / 2
+            # --- NEU: Debug print ---
+            print(f"Displaying item {self.current_item_index}: '{item_to_display}'. Canvas: {canvas_width}x{canvas_height}, Center: ({center_x}, {center_y})")
+            # Handle cases where dimensions might still be 1 (initial state)
+            if canvas_width <= 1 or canvas_height <= 1:
+                 print("Warning: Canvas dimensions too small, centering might fail.")
+                 # Optionally, reschedule display_item slightly later?
+                 # self.after(50, self.display_item, item) # Reschedule after 50ms
+                 # return # Skip drawing this time
+
+        except tk.TclError: return # Handle error if widget destroyed
 
         show_context = self.config.get("show_context")
         context_layout = self.config.get("context_layout")
-
-        # Variables to store calculated boundaries of the main item
-        main_word_start_x = center_x
-        main_word_end_x = center_x
+        main_word_start_x = center_x; main_word_end_x = center_x; main_word_width_total = 0
 
         # --- Draw Main Item (potentially with ORP) ---
         if item_to_display:
-            # Determine if ORP should be applied
-            apply_orp = (self.config.get("enable_orp") and
-                         self.config.get("chunk_size") == 1 and
-                         not is_special_message)
-
+            apply_orp = (self.config.get("enable_orp") and self.config.get("chunk_size") == 1 and not is_special_message)
             if apply_orp:
-                # Draw with centered ORP at center_x, center_y
                 word_len = len(item_to_display); orp_pos_float = self.config.get("orp_position")
                 orp_index = calculate_orp_index(item_to_display, orp_pos_float)
                 if orp_index != -1:
                     part1 = item_to_display[:orp_index]; orp_char = item_to_display[orp_index]; part2 = item_to_display[orp_index+1:]
                     try:
                         width_before = self.widget_font.measure(part1); width_orp = self.widget_font.measure(orp_char); width_after = self.widget_font.measure(part2)
-                        # Calculate positions to center the middle of the ORP character
-                        x_orp_start = center_x - (width_orp / 2);
-                        x_part1_start = x_orp_start - width_before;
-                        x_part2_start = x_orp_start + width_orp
-                        # Draw parts
+                        x_orp_start = center_x - (width_orp / 2); x_part1_start = x_orp_start - width_before; x_part2_start = x_orp_start + width_orp
                         if part1: canvas.create_text(x_part1_start, center_y, text=part1, anchor='w', font=self.widget_font, fill=self.font_color)
                         canvas.create_text(x_orp_start, center_y, text=orp_char, anchor='w', font=self.widget_font, fill=self.highlight_color)
                         if part2: canvas.create_text(x_part2_start, center_y, text=part2, anchor='w', font=self.widget_font, fill=self.font_color)
-                        # Store visual boundaries
                         main_word_start_x = x_part1_start if part1 else x_orp_start
                         main_word_end_x = x_part2_start + width_after if part2 else x_orp_start + width_orp
-                    except tk.TclError as e: print(f"Error measuring/drawing ORP: {e}"); apply_orp = False # Fallback to normal drawing
-                    except Exception as e: print(f"Unexpected error: {e}"); traceback.print_exc(); apply_orp = False # Fallback
-                else: apply_orp = False # Fallback if ORP index invalid
-
-            # Draw normally centered if ORP not applied or failed
+                        main_word_width_total = main_word_end_x - main_word_start_x
+                    except tk.TclError as e: print(f"Error measuring/drawing ORP: {e}"); apply_orp = False
+                    except Exception as e: print(f"Unexpected error: {e}"); traceback.print_exc(); apply_orp = False
+                else: apply_orp = False
             if not apply_orp:
                  canvas.create_text(center_x, center_y, text=item_to_display, anchor='center', font=self.widget_font, fill=self.font_color)
-                 # Estimate boundaries for context positioning
-                 w_main = self.widget_font.measure(item_to_display)
-                 main_word_start_x = center_x - w_main / 2
-                 main_word_end_x = center_x + w_main / 2
+                 try: # Add try block for measure
+                      main_word_width_total = self.widget_font.measure(item_to_display)
+                      main_word_start_x = center_x - main_word_width_total / 2
+                      main_word_end_x = center_x + main_word_width_total / 2
+                 except tk.TclError as e: print(f"Error measuring text: {e}")
 
         # --- Draw Context ---
         if show_context and not is_special_message:
@@ -266,7 +298,6 @@ class ReadingWindow(tk.Toplevel):
                     if prev_item_context: canvas.create_text(center_x, y_prev, text=prev_item_context, anchor='center', font=self.widget_font, fill=self.context_font_color)
                     if next_item_context: canvas.create_text(center_x, y_next, text=next_item_context, anchor='center', font=self.widget_font, fill=self.context_font_color)
                 elif context_layout == "horizontal":
-                    # Draw relative to the already drawn main word boundaries
                     w_space2 = self.widget_font.measure("  ")
                     if prev_item_context:
                         w_prev = self.widget_font.measure(prev_item_context)
@@ -282,6 +313,7 @@ class ReadingWindow(tk.Toplevel):
         """Updates the progress bar."""
         if self.display_items:
             progress_value = self.current_item_index
+            if self.at_end: progress_value = len(self.display_items)
             try: max_val = self.progress_bar.cget("maximum")
             except tk.TclError: max_val = len(self.display_items)
             self.progress_var.set(min(progress_value, max_val))
@@ -296,7 +328,9 @@ class ReadingWindow(tk.Toplevel):
         except tk.TclError: pass
         position_text = ""
         if self.display_items:
-            current_display_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
+            current_display_idx = self.current_item_index
+            if self.paused: current_display_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
+            else: current_display_idx = max(0, min(self.current_item_index, len(self.display_items) -1))
             current_display_pos = current_display_idx + 1
             total_items = len(self.display_items)
             if self.at_end: current_display_pos = total_items
@@ -308,7 +342,9 @@ class ReadingWindow(tk.Toplevel):
     def toggle_pause(self, event=None):
         """Toggles the paused state."""
         self.paused = not self.paused
-        if not self.paused: self.at_end = False; self.schedule_next_item()
+        if not self.paused:
+             self.at_end = False
+             self.schedule_next_item() # Schedule based on current index
         else:
             if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
         self.update_status_bar()
@@ -339,9 +375,7 @@ class ReadingWindow(tk.Toplevel):
             else:
                  if i == 0: target_item_index = 0
                  break
-        # Ensure returned index is within bounds of display_items
         return max(0, min(target_item_index, len(self.display_items) - 1))
-
 
     def rewind_to_sentence_start(self, event=None):
         """Finds the start of the current/previous sentence and jumps there."""
@@ -361,7 +395,8 @@ class ReadingWindow(tk.Toplevel):
         current_sentence_start_item_idx = self._find_item_index_for_word_index(sentence_start_word_idx)
         target_item_index = current_sentence_start_item_idx
 
-        if self.paused and self.current_item_index == current_sentence_start_item_idx and sentence_start_word_idx > 0:
+        is_already_at_start = (self.paused and self.current_item_index == current_sentence_start_item_idx)
+        if is_already_at_start and sentence_start_word_idx > 0:
             print("Already at sentence start, finding previous sentence...")
             prev_sentence_start_word_idx = 0; search_idx = sentence_start_word_idx - 2
             while search_idx >= 0:
@@ -381,18 +416,17 @@ class ReadingWindow(tk.Toplevel):
     def skip_to_next_sentence_start(self, event=None):
         """Finds the start of the next sentence and jumps there."""
         if not self.raw_words or not self.item_to_word_start_index or not self.display_items: return
-
         safe_current_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
         start_word_idx_of_current_item = self.item_to_word_start_index.get(safe_current_idx, 0)
-
-        if self.current_item_index >= len(self.display_items): return # Already past end
+        if self.current_item_index >= len(self.display_items): return
 
         next_sentence_start_word_idx = len(self.raw_words)
         search_start_idx = start_word_idx_of_current_item
-        current_item_is_marker = self.display_items[safe_current_idx] == "__PARAGRAPH__"
-        if not current_item_is_marker:
-             chunk_words = self.display_items[safe_current_idx].split()
-             search_start_idx += len(chunk_words)
+        if safe_current_idx < len(self.display_items):
+            current_item_is_marker = self.display_items[safe_current_idx] == "__PARAGRAPH__"
+            if current_item_is_marker: search_start_idx = start_word_idx_of_current_item + 1
+            else: search_start_idx += len(self.display_items[safe_current_idx].split())
+        else: search_start_idx = start_word_idx_of_current_item
 
         search_idx = search_start_idx
         while search_idx < len(self.raw_words):
@@ -401,13 +435,9 @@ class ReadingWindow(tk.Toplevel):
             search_idx += 1
 
         print(f"Skip Forward: Current item index {self.current_item_index}, search start word {search_start_idx}. Found next sentence start word: {next_sentence_start_word_idx}")
-
-        if next_sentence_start_word_idx >= len(self.raw_words):
-             target_item_index = len(self.display_items)
+        if next_sentence_start_word_idx >= len(self.raw_words): target_item_index = len(self.display_items)
         else: target_item_index = self._find_item_index_for_word_index(next_sentence_start_word_idx)
-
-        if target_item_index <= self.current_item_index and self.current_item_index < len(self.display_items):
-             target_item_index = self.current_item_index + 1
+        if target_item_index <= self.current_item_index and self.current_item_index < len(self.display_items): target_item_index = self.current_item_index + 1
 
         print(f"Skip Forward: Jumping to item index {target_item_index}")
         self.paused = True
