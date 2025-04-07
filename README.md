@@ -2,6 +2,8 @@
 
 **SpeedReader** ist eine einfache, aber leistungsfähige Windows-Anwendung zur Beschleunigung des Lesens mittels **RSVP** (Rapid Serial Visual Presentation). Die Anwendung liest Texte aus der Zwischenablage oder aus Dateien und zeigt sie Wort für Wort oder in Gruppen an – schnell, fokussiert und augenschonend. SpeedReader läuft dezent im System-Tray und lässt sich bequem per Hotkey steuern.
 
+![Verwendung](example.png)  
+*Durch einen Rechtsklick auf das Symbol kann das Programm konfiguriert werden.*
 
 ---
 
@@ -46,7 +48,7 @@
 ### System-Tray
 - Läuft im Hintergrund mit Tray-Symbol.
 - Lesestart aus Zwischenablage oder Datei via Tray-Menü.
-- Globaler Hotkey (Standartmäßig **Strg + Alt + R**) zum Lesen der Zwischenablage.
+- Globaler Hotkey (**Standardmäßig Strg + Alt + R**) zum Lesen der Zwischenablage.
 
 ### Lesefenster
 | Taste         | Funktion                                 |
@@ -78,6 +80,3 @@ Bitte öffne ein Issue.
 
 - Die ORP-Darstellung funktioniert nur bei lateinischer Schrift zuverlässig.
 - Bei sehr großen Texten kann es zu kurzen Verzögerungen beim Start kommen.
-
----
-
