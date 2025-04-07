@@ -11,21 +11,38 @@ try:
 except ImportError:
     HAS_PYNPUT_SETTINGS = False
 
+# Import registry functions if on Windows
+if sys.platform == 'win32':
+     try:
+          from system_utils import add_to_startup, remove_from_startup, is_in_startup
+          HAS_STARTUP_FUNC = True
+     except ImportError:
+          print("Warning: Could not import startup functions from system_utils.")
+          HAS_STARTUP_FUNC = False
+else:
+     def add_to_startup(p): return False
+     def remove_from_startup(): return False
+     def is_in_startup(): return False
+     HAS_STARTUP_FUNC = False
+
+
 class SettingsWindow(tk.Toplevel):
     """
-    Settings window with context layout option, refined layout.
+    Settings window with initial delay setting.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
         self.config = config_manager
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
-        self.geometry("550x800") # Keep size, scrolling handles overflow
+        self.geometry("550x800") # Keep size, check if sufficient
         # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.settings_vars = {} # Holds original vars from config
         self.ui_vars = {}       # Holds IntVars used for UI Spinboxes (ms, %)
+
+        self.initial_run_on_startup = self.config.get("run_on_startup")
 
         # --- Styling ---
         style = ttk.Style(self)
@@ -72,13 +89,20 @@ class SettingsWindow(tk.Toplevel):
 
     def _populate_settings_frame(self):
         # --- WPM Section ---
-        wpm_frame = ttk.LabelFrame(self.main_frame, text="Lesegeschwindigkeit", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15))
+        wpm_frame = ttk.LabelFrame(self.main_frame, text="Lesegeschwindigkeit & Timing", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15)) # Renamed Frame
         self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm")); self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
         ttk.Label(wpm_frame, text="WPM:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
         wpm_scale = ttk.Scale(wpm_frame, from_=50, to=1500, orient="horizontal", variable=self.settings_vars["wpm"]); wpm_scale.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         wpm_spinbox = ttk.Spinbox(wpm_frame, from_=50, to=1500, increment=10, textvariable=self.settings_vars["wpm"], width=6); wpm_spinbox.grid(row=0, column=2, sticky="w", padx=5, pady=5)
         self.wpm_label = ttk.Label(wpm_frame, text="", width=8, anchor="e"); self.wpm_label.grid(row=0, column=3, sticky="e", padx=(5, 0), pady=5)
         wpm_frame.columnconfigure(1, weight=1)
+        # Initial Delay
+        self.settings_vars["initial_delay_ms"] = tk.IntVar(value=self.config.get("initial_delay_ms"))
+        ttk.Label(wpm_frame, text="Startverzögerung:").grid(row=1, column=0, sticky="w", padx=(0, 5), pady=5)
+        delay_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=10000, increment=100, textvariable=self.settings_vars["initial_delay_ms"], width=6) # 0 to 10 sec
+        delay_spinbox.grid(row=1, column=1, columnspan=2, sticky="w", padx=5, pady=5) # Span 2 cols
+        ttk.Label(wpm_frame, text="ms").grid(row=1, column=3, sticky="w", padx=(5, 0), pady=5)
+
 
         # --- Chunk Size Section ---
         chunk_frame = ttk.LabelFrame(self.main_frame, text="Wortgruppengröße (Chunking)", padding="15"); chunk_frame.pack(fill="x", pady=(0, 15))
@@ -104,21 +128,14 @@ class SettingsWindow(tk.Toplevel):
 
         # --- Appearance Section ---
         appearance_frame = ttk.LabelFrame(self.main_frame, text="Erscheinungsbild", padding="15"); appearance_frame.pack(fill="x", pady=(0, 15))
-        # Dark Mode
         self.settings_vars["dark_mode"] = tk.BooleanVar(value=self.config.get("dark_mode"))
-        dark_mode_check = ttk.Checkbutton(appearance_frame, text="Dark Mode aktivieren (im Lesefenster)", variable=self.settings_vars["dark_mode"]);
-        dark_mode_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(2, 5))
-        # Show Context
+        dark_mode_check = ttk.Checkbutton(appearance_frame, text="Dark Mode aktivieren (im Lesefenster)", variable=self.settings_vars["dark_mode"]); dark_mode_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(2, 5))
         self.settings_vars["show_context"] = tk.BooleanVar(value=self.config.get("show_context"))
-        show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (vorheriges/nächstes Wort)", variable=self.settings_vars["show_context"]);
-        show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
-        # Context Layout - Refined Layout
+        show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (vorheriges/nächstes Wort)", variable=self.settings_vars["show_context"]); show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
         self.settings_vars["context_layout"] = tk.StringVar(value=self.config.get("context_layout"))
-        ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0)) # Indent label
-        context_vert_radio = ttk.Radiobutton(appearance_frame, text="Vertikal", variable=self.settings_vars["context_layout"], value="vertical")
-        context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2), padx=5)
-        context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal", variable=self.settings_vars["context_layout"], value="horizontal")
-        context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2), padx=5)
+        ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0))
+        context_vert_radio = ttk.Radiobutton(appearance_frame, text="Vertikal", variable=self.settings_vars["context_layout"], value="vertical"); context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2), padx=5)
+        context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal", variable=self.settings_vars["context_layout"], value="horizontal"); context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2), padx=5)
 
         # --- Font & Colors Section ---
         font_frame = ttk.LabelFrame(self.main_frame, text="Farben & Schriftart (Hell-Modus)", padding="15"); font_frame.pack(fill="x", pady=(0, 15))
@@ -146,18 +163,23 @@ class SettingsWindow(tk.Toplevel):
         orp_frame = ttk.LabelFrame(self.main_frame, text="Optimal Recognition Point (ORP)", padding="15"); orp_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["orp_position"] = tk.DoubleVar(value=self.config.get("orp_position")); self.ui_vars["orp_position_percent"] = tk.IntVar(value=int(self.config.get("orp_position") * 100)); self.ui_vars["orp_position_percent"].trace_add("write", self._update_orp_label)
         self.settings_vars["enable_orp"] = tk.BooleanVar(value=self.config.get("enable_orp"))
-        # Updated Checkbutton text
-        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1)", variable=self.settings_vars["enable_orp"]);
-        orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1)", variable=self.settings_vars["enable_orp"]); orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         ttk.Label(orp_frame, text="Position (%):").grid(row=1, column=0, sticky="w", pady=5)
         orp_spinbox = ttk.Spinbox(orp_frame, from_=0, to=100, increment=1, textvariable=self.ui_vars["orp_position_percent"], width=5); orp_spinbox.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.orp_label = ttk.Label(orp_frame, text="", width=5, anchor="e"); self.orp_label.grid(row=1, column=2, sticky="e", padx=(5, 0), pady=5)
 
         # --- Window Options Section ---
-        window_frame = ttk.LabelFrame(self.main_frame, text="Lesefenster Optionen", padding="15"); window_frame.pack(fill="x", pady=(0, 15))
+        window_frame = ttk.LabelFrame(self.main_frame, text="Fenster Optionen", padding="15"); window_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["reader_borderless"] = tk.BooleanVar(value=self.config.get("reader_borderless")); self.settings_vars["reader_always_on_top"] = tk.BooleanVar(value=self.config.get("reader_always_on_top"))
-        ttk.Checkbutton(window_frame, text="Rahmenloses Fenster", variable=self.settings_vars["reader_borderless"]).pack(anchor="w", pady=2)
-        ttk.Checkbutton(window_frame, text="Immer im Vordergrund", variable=self.settings_vars["reader_always_on_top"]).pack(anchor="w", pady=2)
+        ttk.Checkbutton(window_frame, text="Rahmenloses Lesefenster", variable=self.settings_vars["reader_borderless"]).pack(anchor="w", pady=2)
+        ttk.Checkbutton(window_frame, text="Lesefenster immer im Vordergrund", variable=self.settings_vars["reader_always_on_top"]).pack(anchor="w", pady=2)
+        # --- Run on Startup Checkbox ---
+        self.settings_vars["run_on_startup"] = tk.BooleanVar(value=self.config.get("run_on_startup"))
+        if sys.platform == 'win32' and HAS_STARTUP_FUNC:
+             startup_check = ttk.Checkbutton(window_frame, text="Beim Windows-Start ausführen", variable=self.settings_vars["run_on_startup"])
+             startup_check.pack(anchor="w", pady=(10, 2)) # Add some top margin
+        else:
+             ttk.Label(window_frame, text="Autostart nur unter Windows verfügbar.", foreground="grey").pack(anchor="w", pady=(10, 2))
 
         # --- Hotkey Section ---
         hotkey_frame = ttk.LabelFrame(self.main_frame, text="Tastenkürzel (Start aus Zwischenablage)", padding="15"); hotkey_frame.pack(fill="x", pady=(0, 15))
@@ -181,18 +203,28 @@ class SettingsWindow(tk.Toplevel):
 
     # --- Callback Methods ---
     def _update_wpm_label(self, *args):
+        """Callback for the WPM variable trace to update the label."""
+        # Corrected Structure
         try:
             current_wpm = self.settings_vars["wpm"].get()
-            if not (50 <= current_wpm <= 1500): pass
-            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists(): self.wpm_label.config(text=f"{int(current_wpm)} WPM")
-        except (ValueError, tk.TclError, AttributeError): pass
+            # Removed misplaced 'if' check
+            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists():
+                self.wpm_label.config(text=f"{int(current_wpm)} WPM")
+        except (ValueError, tk.TclError, AttributeError):
+            # Handle errors if variable is invalid or widget destroyed
+            pass
 
     def _update_orp_label(self, *args):
+        """Callback for the ORP UI variable trace to update the label."""
+        # Corrected Structure
         try:
             current_orp_percent = self.ui_vars["orp_position_percent"].get()
-            if not (0 <= current_orp_percent <= 100): pass
-            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists(): self.orp_label.config(text=f"{current_orp_percent}%")
-        except (ValueError, tk.TclError, AttributeError): pass
+            # Removed misplaced 'if' check
+            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists():
+                self.orp_label.config(text=f"{current_orp_percent}%")
+        except (ValueError, tk.TclError, AttributeError):
+            # Handle errors if variable is invalid or widget destroyed
+            pass
 
     def _choose_color(self, setting_key, update_callback=None):
         current_color = self.settings_vars[setting_key].get()
@@ -212,7 +244,7 @@ class SettingsWindow(tk.Toplevel):
     # Corrected _update_font_preview method
     def _update_font_preview(self, *args):
         """Updates the font preview label based on current settings."""
-        try:
+        try: # Outer try
             # Check widget existence
             if not hasattr(self, 'font_preview_label') or not self.font_preview_label.winfo_exists(): return
 
@@ -223,18 +255,18 @@ class SettingsWindow(tk.Toplevel):
             bg_color = self.settings_vars["background_color"].get()
 
             # Validate size
-            try:
+            try: # Inner try for size
                 size = int(size_str)
                 if size < 1: size = 1
-            except (ValueError, TypeError):
+            except (ValueError, TypeError): # Except for size
                 self.font_preview_label.config(text="Ungültige Größe", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
                 return # Exit if size is invalid
 
-            # Create font (Inner try/except for font creation errors)
-            try:
+            # Create font (Inner try for font)
+            try: # Inner try for font
                 preview_font_size = max(8, int(size * 0.6))
                 preview_font = font.Font(family=family, size=preview_font_size)
-            except tk.TclError: # Catch font creation errors specifically
+            except tk.TclError: # Except for font
                  self.font_preview_label.config(text="Ungültige Schriftart", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
                  return # Exit if font is invalid
 
@@ -322,9 +354,27 @@ class SettingsWindow(tk.Toplevel):
 
     # --- Save and Close Methods ---
     def save_and_close(self):
-        """Saves all settings (converting UI vars back) and closes the window."""
+        """Saves all settings (converting UI vars back) and handles startup registry."""
         try:
-            # Convert UI IntVars back to original DoubleVars/IntVars/StringVars before saving
+            # --- Convert UI vars and handle Startup Registry ---
+            new_startup_state = False
+            if sys.platform == 'win32' and HAS_STARTUP_FUNC:
+                new_startup_state = self.settings_vars["run_on_startup"].get()
+                if new_startup_state != self.initial_run_on_startup:
+                    print(f"Run on startup changed from {self.initial_run_on_startup} to {new_startup_state}")
+                    exe_path = sys.executable
+                    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                         print(f"Running as bundled app: {exe_path}")
+                         if new_startup_state:
+                              if not add_to_startup(exe_path): messagebox.showerror("Fehler Autostart", "Konnte nicht zum Autostart hinzufügen.", parent=self)
+                         else:
+                              if not remove_from_startup(): messagebox.showerror("Fehler Autostart", "Konnte nicht aus Autostart entfernen.", parent=self)
+                    else:
+                         print("Not running as bundled app, skipping registry modification.")
+                         new_startup_state = self.initial_run_on_startup
+                         self.settings_vars["run_on_startup"].set(new_startup_state)
+
+            # Convert other UI vars
             orp_percent = self.ui_vars["orp_position_percent"].get()
             self.settings_vars["orp_position"].set(max(0.0, min(1.0, orp_percent / 100.0)))
             pause_punct_ms = self.ui_vars["pause_punctuation_ms"].get()
@@ -334,12 +384,12 @@ class SettingsWindow(tk.Toplevel):
             pause_para_ms = self.ui_vars["pause_paragraph_ms"].get()
             self.settings_vars["pause_paragraph"].set(max(0.0, pause_para_ms / 1000.0))
 
-            # Validate and save original variables
+            # --- Validate and save all original variables ---
             for key, var in self.settings_vars.items():
                 value = None
                 try: value = var.get()
                 except (tk.TclError, ValueError): messagebox.showerror("Ungültiger Wert", f"Konnte Wert für '{key}' nicht lesen.", parent=self); return
-                # Validate based on key
+                # Validation based on key
                 if key == "wpm":
                      if not isinstance(value, int) or not (50 <= value <= 1500): messagebox.showerror("Ungültiger Wert", f"WPM: 50-1500.", parent=self); return
                 elif key == "chunk_size":
@@ -350,11 +400,12 @@ class SettingsWindow(tk.Toplevel):
                      if not isinstance(value, float) or not (0.0 <= value <= 1.0): messagebox.showerror("Ungültiger Wert", f"ORP Position: 0.0-1.0.", parent=self); return
                 elif key in ["pause_punctuation", "pause_comma", "pause_paragraph"]:
                      if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert für '{key}': >= 0.", parent=self); return
-                elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top"]:
+                elif key == "initial_delay_ms": # Validate delay
+                     if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Startverzögerung: >= 0 ms.", parent=self); return
+                elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top", "run_on_startup"]:
                      if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"'{key}' muss An/Aus sein.", parent=self); return
-                elif key == "context_layout": # Validate context layout
+                elif key == "context_layout":
                      if value not in ["vertical", "horizontal"]: messagebox.showerror("Ungültiger Wert", f"'{key}' muss 'vertical' oder 'horizontal' sein.", parent=self); return
-                # Add other validations if needed...
 
                 # Set validated value in config manager
                 self.config.set(key, value)
