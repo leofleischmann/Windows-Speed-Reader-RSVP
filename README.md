@@ -80,3 +80,9 @@ Bitte öffne ein Issue.
 
 - Die ORP-Darstellung funktioniert nur bei lateinischer Schrift zuverlässig.
 - Bei sehr großen Texten kann es zu kurzen Verzögerungen beim Start kommen.
+
+---
+
+## 🔍 Hinweis zur Code-Erstellung
+
+> **Hinweis:** Der Großteil des Quellcodes (ca. 99 %) wurde mithilfe von **Gemini 2.5 Pro** (Google AI) generiert.
