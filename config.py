@@ -21,7 +21,9 @@ DEFAULT_SETTINGS = {
     "reader_always_on_top": True,
     "hide_main_window": True,
     "dark_mode": False,
-    "chunk_size": 1           # NEU: Anzahl Wörter pro Anzeige
+    "chunk_size": 1,
+    "show_context": False,
+    "context_layout": "vertical" # NEU: 'vertical' or 'horizontal'
 }
 SETTINGS_FILE = "speed_reader_settings.json"
 
@@ -35,50 +37,41 @@ class ConfigManager:
 
     def load_settings(self):
         """Loads settings from the JSON file or returns defaults."""
-        settings = self.defaults.copy() # Start with defaults
+        settings = self.defaults.copy()
         try:
             if os.path.exists(self.filename):
                 with open(self.filename, 'r', encoding='utf-8') as f:
                     loaded_settings = json.load(f)
-                    settings.update(loaded_settings) # Update with loaded values
+                    settings.update(loaded_settings)
 
-            # Ensure correct types after loading/updating
-            for key in ['wpm', 'font_size', 'chunk_size']: # Added chunk_size
+            # Ensure correct types
+            for key in ['wpm', 'font_size', 'chunk_size']:
                 if key in settings: settings[key] = int(settings[key])
             for key in ['pause_punctuation', 'pause_comma', 'pause_paragraph', 'orp_position']:
                  if key in settings: settings[key] = float(settings[key])
-            for key in ['enable_orp', 'reader_borderless', 'reader_always_on_top', 'hide_main_window', 'dark_mode']:
+            for key in ['enable_orp', 'reader_borderless', 'reader_always_on_top', 'hide_main_window', 'dark_mode', 'show_context']:
                  if key in settings: settings[key] = bool(settings[key])
+            # Ensure context_layout is valid string
+            if settings.get("context_layout") not in ["vertical", "horizontal"]:
+                 settings["context_layout"] = self.defaults["context_layout"]
 
         except (json.JSONDecodeError, IOError, TypeError, ValueError) as e:
             print(f"Error loading settings from {self.filename}: {e}. Using default settings.")
-            settings = self.defaults.copy() # Revert to defaults on error
+            settings = self.defaults.copy()
 
-        # Ensure chunk_size is at least 1
-        if settings.get("chunk_size", 1) < 1:
-             print("Warning: chunk_size must be >= 1. Setting to 1.")
-             settings["chunk_size"] = 1
-
+        if settings.get("chunk_size", 1) < 1: settings["chunk_size"] = 1
         return settings
-
 
     def save_settings(self):
         """Saves the current settings to the JSON file."""
         try:
-            # Ensure chunk_size is valid before saving
-            if self.settings.get("chunk_size", 1) < 1:
-                self.settings["chunk_size"] = 1
+            if self.settings.get("chunk_size", 1) < 1: self.settings["chunk_size"] = 1
+            if self.settings.get("context_layout") not in ["vertical", "horizontal"]:
+                 self.settings["context_layout"] = self.defaults["context_layout"]
             with open(self.filename, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4)
-        except IOError as e:
-            print(f"Error saving settings to {self.filename}: {e}")
-        except Exception as e:
-            print(f"Unexpected error saving settings: {e}")
+        except IOError as e: print(f"Error saving settings to {self.filename}: {e}")
+        except Exception as e: print(f"Unexpected error saving settings: {e}")
 
-    def get(self, key):
-        """Gets a specific setting value."""
-        return self.settings.get(key, self.defaults.get(key))
-
-    def set(self, key, value):
-        """Sets a specific setting value."""
-        self.settings[key] = value
+    def get(self, key): return self.settings.get(key, self.defaults.get(key))
+    def set(self, key, value): self.settings[key] = value
