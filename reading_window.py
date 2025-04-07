@@ -13,13 +13,14 @@ DARK_STATUS_BG = "#3c3f41"; DARK_STATUS_FG = "#bbbbbb"
 DARK_PROGRESS_TROUGH = "#3c3f41"; DARK_PROGRESS_BAR = "#4e7cbf"
 CONTEXT_FG_LIGHT = "#a0a0a0"; CONTEXT_FG_DARK = "#606060" # Context colors
 
-INITIAL_DELAY_MS = 1500 # Verzögerung in Millisekunden vor Start
+# INITIAL_DELAY_MS constant removed - value now read from config
 
 class ReadingWindow(tk.Toplevel):
     """
     RSVP window with context display (vertical/horizontal), enhanced navigation,
     Canvas ORP alignment (fixed point), chunking, dark mode, restart,
-    close on enter at end, initial delay, and fixed initial display position.
+    close on enter at end, initial delay, configurable word length delay,
+    and fixed initial display position.
     """
     def __init__(self, parent, config_manager):
         super().__init__(parent)
@@ -135,19 +136,31 @@ class ReadingWindow(tk.Toplevel):
                     self.item_to_word_start_index[item_index] = start_idx_for_current_chunk; current_chunk_words = []
 
     def _calculate_delay_ms_for_item(self, item_index):
-        """Calculates the display duration in ms for the item at the given index."""
+        """Calculates the display duration in ms for the item, adding extra time for longer items."""
         if item_index < 0 or item_index >= len(self.display_items): return 10
         item = self.display_items[item_index]
         base_delay_s = calculate_delay(self.config.get("wpm")); extra_pause_s = 0.0
         pause_punct_s = self.config.get("pause_punctuation"); pause_comma_s = self.config.get("pause_comma"); pause_para_s = self.config.get("pause_paragraph")
-        if item == "__PARAGRAPH__": extra_pause_s = pause_para_s; total_delay_s = extra_pause_s
+
+        if item == "__PARAGRAPH__":
+            extra_pause_s = pause_para_s; total_delay_s = extra_pause_s
+            char_count = 0
         else:
             words_in_item = len(item.split())
             visible_item = item.rstrip(); last_visible_char = visible_item[-1] if visible_item else ''
             if last_visible_char in ('.', '!', '?', ':', ';'): extra_pause_s = pause_punct_s
             elif last_visible_char == ',': extra_pause_s = pause_comma_s
             total_delay_s = (words_in_item * base_delay_s) + extra_pause_s
-        return max(10, int(total_delay_s * 1000))
+            char_count = len(item.replace(" ", ""))
+
+        base_delay_ms = max(10, int(total_delay_s * 1000))
+        extra_length_ms = 0
+        length_threshold = self.config.get("word_length_threshold")
+        extra_ms_per_char = self.config.get("extra_ms_per_char")
+        if char_count > length_threshold:
+             extra_length_ms = (char_count - length_threshold) * extra_ms_per_char
+        final_delay_ms = base_delay_ms + extra_length_ms
+        return final_delay_ms
 
     def start_reading(self, text):
         """Processes text, generates items, then starts reading sequence after delay."""
@@ -156,19 +169,19 @@ class ReadingWindow(tk.Toplevel):
         self._generate_display_items()
         if not self.display_items: messagebox.showinfo("Leerer Text", "Keine anzeigbaren Wörter nach Verarbeitung gefunden.", parent=self); self.close_window(); return
 
-        self.restart_reading(update_ui=False) # Reset state
-        self.update_display_settings() # Apply theme/fonts
-        self.current_item_index = 0 # Ensure we start at index 0
-        self.update_progress() # Show initial progress (0)
-        self.update_status_bar() # Show initial status (e.g., "Block 1 / ...")
-        # Clear canvas initially
-        self.word_display_canvas.delete("all")
+        self.restart_reading(update_ui=False)
+        self.update_display_settings()
+        self.current_item_index = 0
+        self.update_progress()
+        self.update_status_bar()
+        self.word_display_canvas.delete("all") # Clear canvas initially
 
-        # --- Schedule the *first* call to schedule_next_item after delay ---
+        # Schedule the *first* call to schedule_next_item after delay
         initial_delay = self.config.get("initial_delay_ms")
         print(f"Scheduling reading start after {initial_delay}ms delay...")
         if self.reading_job: self.after_cancel(self.reading_job)
-        # This call will display item 0 after the delay
+        # --- NEU: Force update before scheduling ---
+        self.update_idletasks()
         self.reading_job = self.after(initial_delay, self.schedule_next_item)
 
     def restart_reading(self, event=None, update_ui=True):
@@ -180,11 +193,12 @@ class ReadingWindow(tk.Toplevel):
         self.progress_bar.config(maximum=len(self.display_items))
 
         if update_ui:
-            # Don't display item immediately, clear canvas instead
-            self.word_display_canvas.delete("all")
+            self.word_display_canvas.delete("all") # Clear canvas
             self.update_status_bar()
             # Schedule the first call to schedule_next_item after delay
-            initial_delay = self.config.get("initial_delay_ms") # Read delay from config
+            initial_delay = self.config.get("initial_delay_ms")
+            # --- NEU: Force update before scheduling ---
+            self.update_idletasks()
             self.reading_job = self.after(initial_delay, self.schedule_next_item)
 
     # Remove _transition_to_item_1 if it exists
@@ -194,12 +208,11 @@ class ReadingWindow(tk.Toplevel):
         if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
         if self.paused: self.update_status_bar(); return
 
-        # Check if we are past the end *before* displaying
         if self.current_item_index >= len(self.display_items):
             self.display_item("--- Ende ---"); self.progress_var.set(len(self.display_items)); self.update_status_bar(); self.at_end = True; return
 
-        # --- Display current item and update progress ---
         self.at_end = False
+        # --- Display current item and update progress ---
         self.display_item() # Display item at current_item_index
         self.update_progress()
         self.update_status_bar() # Update status bar reflecting item just displayed
@@ -208,9 +221,7 @@ class ReadingWindow(tk.Toplevel):
         actual_delay_ms = self._calculate_delay_ms_for_item(self.current_item_index)
 
         # --- Schedule the NEXT call ---
-        # Increment index *after* calculating delay for current item
-        self.current_item_index += 1
-        # Schedule this function again to handle the next item after the delay
+        self.current_item_index += 1 # Increment AFTER calculating delay
         self.reading_job = self.after(actual_delay_ms, self.schedule_next_item)
 
 
@@ -248,12 +259,11 @@ class ReadingWindow(tk.Toplevel):
             center_x = canvas_width / 2; center_y = canvas_height / 2
             # --- NEU: Debug print ---
             print(f"Displaying item {self.current_item_index}: '{item_to_display}'. Canvas: {canvas_width}x{canvas_height}, Center: ({center_x}, {center_y})")
-            # Handle cases where dimensions might still be 1 (initial state)
+            # Check dimensions again
             if canvas_width <= 1 or canvas_height <= 1:
-                 print("Warning: Canvas dimensions too small, centering might fail.")
-                 # Optionally, reschedule display_item slightly later?
-                 # self.after(50, self.display_item, item) # Reschedule after 50ms
-                 # return # Skip drawing this time
+                 print("Warning: Canvas dimensions still too small after update_idletasks.")
+                 # Fallback: Use estimated center based on geometry if winfo fails? Risky.
+                 # For now, let it try to draw at potentially (0.5, 0.5)
 
         except tk.TclError: return # Handle error if widget destroyed
 
@@ -283,11 +293,10 @@ class ReadingWindow(tk.Toplevel):
                 else: apply_orp = False
             if not apply_orp:
                  canvas.create_text(center_x, center_y, text=item_to_display, anchor='center', font=self.widget_font, fill=self.font_color)
-                 try: # Add try block for measure
-                      main_word_width_total = self.widget_font.measure(item_to_display)
-                      main_word_start_x = center_x - main_word_width_total / 2
-                      main_word_end_x = center_x + main_word_width_total / 2
-                 except tk.TclError as e: print(f"Error measuring text: {e}")
+                 try: main_word_width_total = self.widget_font.measure(item_to_display)
+                 except tk.TclError: main_word_width_total = 0
+                 main_word_start_x = center_x - main_word_width_total / 2
+                 main_word_end_x = center_x + main_word_width_total / 2
 
         # --- Draw Context ---
         if show_context and not is_special_message:
