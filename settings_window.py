@@ -20,6 +20,7 @@ if sys.platform == 'win32':
           print("Warning: Could not import startup functions from system_utils.")
           HAS_STARTUP_FUNC = False
 else:
+     # Provide dummy functions otherwise
      def add_to_startup(p): return False
      def remove_from_startup(): return False
      def is_in_startup(): return False
@@ -28,14 +29,14 @@ else:
 
 class SettingsWindow(tk.Toplevel):
     """
-    Settings window with initial delay setting.
+    Settings window including configuration for word length delay.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
         self.config = config_manager
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
-        self.geometry("550x800") # Keep size, check if sufficient
+        self.geometry("550x800") # Keep size, scrolling handles overflow
         # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -88,21 +89,30 @@ class SettingsWindow(tk.Toplevel):
         if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists(): self.canvas.itemconfig(self.main_frame_id, width=self.canvas.winfo_width())
 
     def _populate_settings_frame(self):
-        # --- WPM Section ---
-        wpm_frame = ttk.LabelFrame(self.main_frame, text="Lesegeschwindigkeit & Timing", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15)) # Renamed Frame
+        # --- WPM & Timing Section --- NEU: Timing hinzugefügt
+        wpm_frame = ttk.LabelFrame(self.main_frame, text="Geschwindigkeit & Timing", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15))
+        # WPM
         self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm")); self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
         ttk.Label(wpm_frame, text="WPM:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
         wpm_scale = ttk.Scale(wpm_frame, from_=50, to=1500, orient="horizontal", variable=self.settings_vars["wpm"]); wpm_scale.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         wpm_spinbox = ttk.Spinbox(wpm_frame, from_=50, to=1500, increment=10, textvariable=self.settings_vars["wpm"], width=6); wpm_spinbox.grid(row=0, column=2, sticky="w", padx=5, pady=5)
         self.wpm_label = ttk.Label(wpm_frame, text="", width=8, anchor="e"); self.wpm_label.grid(row=0, column=3, sticky="e", padx=(5, 0), pady=5)
-        wpm_frame.columnconfigure(1, weight=1)
         # Initial Delay
         self.settings_vars["initial_delay_ms"] = tk.IntVar(value=self.config.get("initial_delay_ms"))
         ttk.Label(wpm_frame, text="Startverzögerung:").grid(row=1, column=0, sticky="w", padx=(0, 5), pady=5)
-        delay_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=10000, increment=100, textvariable=self.settings_vars["initial_delay_ms"], width=6) # 0 to 10 sec
-        delay_spinbox.grid(row=1, column=1, columnspan=2, sticky="w", padx=5, pady=5) # Span 2 cols
+        delay_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=10000, increment=100, textvariable=self.settings_vars["initial_delay_ms"], width=6); delay_spinbox.grid(row=1, column=1, columnspan=2, sticky="w", padx=5, pady=5)
         ttk.Label(wpm_frame, text="ms").grid(row=1, column=3, sticky="w", padx=(5, 0), pady=5)
+        # Word Length Delay - NEU
+        self.settings_vars["word_length_threshold"] = tk.IntVar(value=self.config.get("word_length_threshold"))
+        self.settings_vars["extra_ms_per_char"] = tk.IntVar(value=self.config.get("extra_ms_per_char"))
+        ttk.Label(wpm_frame, text="Wortlängen-Schwelle:").grid(row=2, column=0, sticky="w", padx=(0, 5), pady=5)
+        threshold_spinbox = ttk.Spinbox(wpm_frame, from_=1, to=20, increment=1, textvariable=self.settings_vars["word_length_threshold"], width=4); threshold_spinbox.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        ttk.Label(wpm_frame, text="Zeichen").grid(row=2, column=2, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Label(wpm_frame, text="Extra Zeit pro Zeichen:").grid(row=3, column=0, sticky="w", padx=(0, 5), pady=5)
+        extra_ms_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=50, increment=1, textvariable=self.settings_vars["extra_ms_per_char"], width=4); extra_ms_spinbox.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        ttk.Label(wpm_frame, text="ms (über Schwelle)").grid(row=3, column=2, columnspan=2, sticky="w", padx=5, pady=5)
 
+        wpm_frame.columnconfigure(1, weight=1) # Make scale expand
 
         # --- Chunk Size Section ---
         chunk_frame = ttk.LabelFrame(self.main_frame, text="Wortgruppengröße (Chunking)", padding="15"); chunk_frame.pack(fill="x", pady=(0, 15))
@@ -173,13 +183,11 @@ class SettingsWindow(tk.Toplevel):
         self.settings_vars["reader_borderless"] = tk.BooleanVar(value=self.config.get("reader_borderless")); self.settings_vars["reader_always_on_top"] = tk.BooleanVar(value=self.config.get("reader_always_on_top"))
         ttk.Checkbutton(window_frame, text="Rahmenloses Lesefenster", variable=self.settings_vars["reader_borderless"]).pack(anchor="w", pady=2)
         ttk.Checkbutton(window_frame, text="Lesefenster immer im Vordergrund", variable=self.settings_vars["reader_always_on_top"]).pack(anchor="w", pady=2)
-        # --- Run on Startup Checkbox ---
         self.settings_vars["run_on_startup"] = tk.BooleanVar(value=self.config.get("run_on_startup"))
         if sys.platform == 'win32' and HAS_STARTUP_FUNC:
              startup_check = ttk.Checkbutton(window_frame, text="Beim Windows-Start ausführen", variable=self.settings_vars["run_on_startup"])
-             startup_check.pack(anchor="w", pady=(10, 2)) # Add some top margin
-        else:
-             ttk.Label(window_frame, text="Autostart nur unter Windows verfügbar.", foreground="grey").pack(anchor="w", pady=(10, 2))
+             startup_check.pack(anchor="w", pady=(10, 2))
+        else: ttk.Label(window_frame, text="Autostart nur unter Windows verfügbar.", foreground="grey").pack(anchor="w", pady=(10, 2))
 
         # --- Hotkey Section ---
         hotkey_frame = ttk.LabelFrame(self.main_frame, text="Tastenkürzel (Start aus Zwischenablage)", padding="15"); hotkey_frame.pack(fill="x", pady=(0, 15))
@@ -203,29 +211,15 @@ class SettingsWindow(tk.Toplevel):
 
     # --- Callback Methods ---
     def _update_wpm_label(self, *args):
-        """Callback for the WPM variable trace to update the label."""
-        # Corrected Structure
         try:
             current_wpm = self.settings_vars["wpm"].get()
-            # Removed misplaced 'if' check
-            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists():
-                self.wpm_label.config(text=f"{int(current_wpm)} WPM")
-        except (ValueError, tk.TclError, AttributeError):
-            # Handle errors if variable is invalid or widget destroyed
-            pass
-
+            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists(): self.wpm_label.config(text=f"{int(current_wpm)} WPM")
+        except (ValueError, tk.TclError, AttributeError): pass
     def _update_orp_label(self, *args):
-        """Callback for the ORP UI variable trace to update the label."""
-        # Corrected Structure
         try:
             current_orp_percent = self.ui_vars["orp_position_percent"].get()
-            # Removed misplaced 'if' check
-            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists():
-                self.orp_label.config(text=f"{current_orp_percent}%")
-        except (ValueError, tk.TclError, AttributeError):
-            # Handle errors if variable is invalid or widget destroyed
-            pass
-
+            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists(): self.orp_label.config(text=f"{current_orp_percent}%")
+        except (ValueError, tk.TclError, AttributeError): pass
     def _choose_color(self, setting_key, update_callback=None):
         current_color = self.settings_vars[setting_key].get()
         try: color_code = colorchooser.askcolor(title=f"Farbe wählen für '{setting_key}'", initialcolor=current_color, parent=self)
@@ -240,55 +234,57 @@ class SettingsWindow(tk.Toplevel):
                 if preview_widget and preview_widget.winfo_exists(): preview_widget.config(bg=hex_color)
             except tk.TclError: pass
             if update_callback: update_callback()
-
-    # Corrected _update_font_preview method
+            
+    # Korrekte _update_font_preview method
     def _update_font_preview(self, *args):
         """Updates the font preview label based on current settings."""
-        try: # Outer try
-            # Check widget existence
+        try: # Äußerer try-Block für allgemeine Fehler
+            # Widget-Existenz prüfen
             if not hasattr(self, 'font_preview_label') or not self.font_preview_label.winfo_exists(): return
 
-            # Get values
+            # Werte holen
             family = self.settings_vars["font_family"].get()
             size_str = self.settings_vars["font_size"].get()
             color = self.settings_vars["font_color"].get()
             bg_color = self.settings_vars["background_color"].get()
 
-            # Validate size
-            try: # Inner try for size
+            # Größe validieren
+            try: # Innerer try-Block für Größen-Validierung
                 size = int(size_str)
                 if size < 1: size = 1
-            except (ValueError, TypeError): # Except for size
+            # Direkt folgender except-Block für Größen-Validierung
+            except (ValueError, TypeError):
                 self.font_preview_label.config(text="Ungültige Größe", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
-                return # Exit if size is invalid
+                return # Funktion verlassen bei ungültiger Größe
 
-            # Create font (Inner try for font)
-            try: # Inner try for font
+            # Schriftart erstellen
+            try: # Innerer try-Block für Schriftart-Erstellung
                 preview_font_size = max(8, int(size * 0.6))
                 preview_font = font.Font(family=family, size=preview_font_size)
-            except tk.TclError: # Except for font
+            # Direkt folgender except-Block für Schriftart-Erstellung
+            except tk.TclError:
                  self.font_preview_label.config(text="Ungültige Schriftart", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
-                 return # Exit if font is invalid
+                 return # Funktion verlassen bei ungültiger Schriftart
 
-            # Configure the label if font creation succeeded
+            # Label konfigurieren (nur wenn alles oben erfolgreich war)
             self.font_preview_label.config(
                 text="Wort 123", font=preview_font, fg=color, bg=bg_color
             )
 
+        # Except-Blöcke für den äußeren try-Block
         except tk.TclError:
-             # Catch other TclErrors (e.g., during widget config if closing)
+             # Andere TclErrors abfangen (z.B. beim Schließen)
              pass
         except Exception as e:
-            # Catch any other unexpected errors
+            # Andere unerwartete Fehler abfangen
             print(f"Unexpected error during font preview update: {e}")
             print(traceback.format_exc())
             try:
                 if hasattr(self, 'font_preview_label') and self.font_preview_label.winfo_exists():
                     self.font_preview_label.config(text="Vorschau Fehler", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
-            except: pass # Ignore errors during error display
+            except: pass # Fehler beim Anzeigen des Fehlers ignorieren
 
-
-    # --- Hotkey Recording Methods (Unchanged) ---
+    # --- Hotkey Recording Methods ---
     def _record_hotkey(self):
         if not HAS_PYNPUT_SETTINGS: messagebox.showerror("Fehler", "'pynput' fehlt.", parent=self); return
         if self.recording_active: return
@@ -296,13 +292,11 @@ class SettingsWindow(tk.Toplevel):
         self.hotkey_entry.config(state="normal"); self.hotkey_entry.delete(0, tk.END); self.hotkey_entry.insert(0, "Drücke Tastenkombination..."); self.hotkey_entry.config(state="readonly")
         self.record_button.config(text="Aufnahme läuft...", state="disabled")
         self.focus_set(); self.bind("<KeyPress>", self._on_key_press, add='+'); self.bind("<KeyRelease>", self._on_key_release, add='+')
-
     def _on_key_press(self, event):
         if not self.recording_active: return 'break'
         key_name = self._get_pynput_key_name(event)
         if key_name: self.pressed_keys.add(key_name); self._update_hotkey_entry_display()
         return 'break'
-
     def _on_key_release(self, event):
         if not self.recording_active: return 'break'
         key_name = self._get_pynput_key_name(event)
@@ -316,7 +310,6 @@ class SettingsWindow(tk.Toplevel):
             self.pressed_keys.remove(key_name)
             if not any(k not in {'ctrl', 'alt', 'shift', 'cmd'} for k in self.pressed_keys): self._update_hotkey_entry_display()
         return 'break'
-
     def _get_pynput_key_name(self, event):
         key = event.keysym.lower()
         if key in ["control_l", "control_r"]: return "ctrl"
@@ -328,13 +321,11 @@ class SettingsWindow(tk.Toplevel):
         if key in special_keys_map: return special_keys_map[key]
         if len(key) == 1 and (key.isalnum() or key in '+-*/.:,;_=<>?@#$%^&!'): return key
         return None
-
     def _update_hotkey_entry_display(self):
         if not self.recording_active: return
         mods_ordered = ['cmd', 'ctrl', 'alt', 'shift']; pressed_mod_names = {k for k in self.pressed_keys if k in mods_ordered}; other_keys = sorted([k for k in self.pressed_keys if k not in mods_ordered]); sorted_mods = [m for m in mods_ordered if m in pressed_mod_names]
         hotkey_parts = [f"<{m}>" for m in sorted_mods] + other_keys; hotkey_str = "+".join(hotkey_parts)
         if hasattr(self, 'hotkey_entry') and self.hotkey_entry.winfo_exists(): self.hotkey_entry.config(state="normal"); self.hotkey_entry.delete(0, tk.END); self.hotkey_entry.insert(0, hotkey_str if hotkey_str else "..."); self.hotkey_entry.config(state="readonly")
-
     def _stop_recording(self, revert=False):
         if not self.recording_active: return
         try: self.unbind("<KeyPress>"); self.unbind("<KeyRelease>")
@@ -402,6 +393,10 @@ class SettingsWindow(tk.Toplevel):
                      if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert für '{key}': >= 0.", parent=self); return
                 elif key == "initial_delay_ms": # Validate delay
                      if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Startverzögerung: >= 0 ms.", parent=self); return
+                elif key == "word_length_threshold": # Validate threshold
+                     if not isinstance(value, int) or value < 1: messagebox.showerror("Ungültiger Wert", f"Wortlängen-Schwelle: >= 1.", parent=self); return
+                elif key == "extra_ms_per_char": # Validate extra ms
+                     if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Extra Zeit pro Zeichen: >= 0 ms.", parent=self); return
                 elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top", "run_on_startup"]:
                      if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"'{key}' muss An/Aus sein.", parent=self); return
                 elif key == "context_layout":
