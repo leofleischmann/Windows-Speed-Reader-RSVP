@@ -13,14 +13,14 @@ except ImportError:
 
 class SettingsWindow(tk.Toplevel):
     """
-    Settings window with context layout option.
+    Settings window with context layout option, refined layout.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
         self.config = config_manager
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
-        self.geometry("550x800") # Keep size
+        self.geometry("550x800") # Keep size, scrolling handles overflow
         # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -33,7 +33,7 @@ class SettingsWindow(tk.Toplevel):
         except tk.TclError: print("Hinweis: 'clam' ttk-Theme nicht verfügbar."); style.theme_use('default')
         style.configure("TLabel", padding=(5, 5)); style.configure("TEntry", padding=(5, 5))
         style.configure("TButton", padding=(5, 5)); style.configure("TCheckbutton", padding=(0, 5))
-        style.configure("TRadiobutton", padding=(0, 5)) # Style for Radiobuttons
+        style.configure("TRadiobutton", padding=(0, 5))
         style.configure("TScale", padding=(5, 5)); style.configure("TSpinbox", padding=(5, 5))
         style.configure("TLabelframe.Label", padding=(5, 2)); style.configure("TLabelframe", padding=10)
         style.configure("Vertical.TScrollbar", padding=0)
@@ -112,14 +112,13 @@ class SettingsWindow(tk.Toplevel):
         self.settings_vars["show_context"] = tk.BooleanVar(value=self.config.get("show_context"))
         show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (vorheriges/nächstes Wort)", variable=self.settings_vars["show_context"]);
         show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
-        # Context Layout - NEU
+        # Context Layout - Refined Layout
         self.settings_vars["context_layout"] = tk.StringVar(value=self.config.get("context_layout"))
-        ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0)) # Indent slightly
+        ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0)) # Indent label
         context_vert_radio = ttk.Radiobutton(appearance_frame, text="Vertikal", variable=self.settings_vars["context_layout"], value="vertical")
-        context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2))
-        context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal (deaktiviert ORP)", variable=self.settings_vars["context_layout"], value="horizontal")
-        context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2))
-
+        context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2), padx=5)
+        context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal", variable=self.settings_vars["context_layout"], value="horizontal")
+        context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2), padx=5)
 
         # --- Font & Colors Section ---
         font_frame = ttk.LabelFrame(self.main_frame, text="Farben & Schriftart (Hell-Modus)", padding="15"); font_frame.pack(fill="x", pady=(0, 15))
@@ -147,7 +146,9 @@ class SettingsWindow(tk.Toplevel):
         orp_frame = ttk.LabelFrame(self.main_frame, text="Optimal Recognition Point (ORP)", padding="15"); orp_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["orp_position"] = tk.DoubleVar(value=self.config.get("orp_position")); self.ui_vars["orp_position_percent"] = tk.IntVar(value=int(self.config.get("orp_position") * 100)); self.ui_vars["orp_position_percent"].trace_add("write", self._update_orp_label)
         self.settings_vars["enable_orp"] = tk.BooleanVar(value=self.config.get("enable_orp"))
-        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1 & vert. Kontext)", variable=self.settings_vars["enable_orp"]); orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        # Updated Checkbutton text
+        orp_check = ttk.Checkbutton(orp_frame, text="ORP hervorheben (nur bei Wortgröße 1)", variable=self.settings_vars["enable_orp"]);
+        orp_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         ttk.Label(orp_frame, text="Position (%):").grid(row=1, column=0, sticky="w", pady=5)
         orp_spinbox = ttk.Spinbox(orp_frame, from_=0, to=100, increment=1, textvariable=self.ui_vars["orp_position_percent"], width=5); orp_spinbox.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.orp_label = ttk.Label(orp_frame, text="", width=5, anchor="e"); self.orp_label.grid(row=1, column=2, sticky="e", padx=(5, 0), pady=5)
