@@ -80,7 +80,7 @@
 3. Starte `SpeedReader.exe` per Doppelklick.
 4. Die Anwendung startet im Hintergrund und erscheint im System-Tray.
 
-> 💡 SpeedReader benötigt **keine Installation** und **keine Administratorrechte**.
+> 💡 SpeedReader benötigt **keine Installation** **keine Internetverbindung** und **keine Administratorrechte**.
 
 ---
 
