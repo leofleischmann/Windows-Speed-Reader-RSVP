@@ -5,6 +5,9 @@
 ![Screenshot der Anwendung im Lesemodus](example.png)  
 *Ein Rechtsklick auf das Symbol öffnet das Menü.*
 
+![Beispiel eines abgespielten Textes](video.gif)  
+*Textwiedergabe mit 500 WPM im Lesemodus*
+
 ---
 
 ## 🔑 Hauptfunktionen
@@ -70,9 +73,9 @@
 ## 💾 Installation
 
 1. Lade die neueste Version von der [Releases-Seite](#) herunter.
-2. Verschieben sie die `SpeedReader.exe` an einen beliebigen Speicherplatz.
+2. Verschiebe `SpeedReader.exe` an einen gewünschten Ort (z. B. Desktop oder Tools-Ordner).
 3. Starte die Anwendung per Doppelklick auf `SpeedReader.exe`.
-4. Die Anwendung wird daraufhin im Hintergrund geöffnet und ist Einsatzbereit sobald sie in den Tray Icons auftaucht.
+4. Die Anwendung startet im Hintergrund und erscheint im Infobereich (Tray).
 
 ---
 
