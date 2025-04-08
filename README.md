@@ -1,88 +1,98 @@
-# SpeedReader
+# SpeedReader (RSVP-Anwendung)
 
-**SpeedReader** ist eine einfache, aber leistungsfähige Windows-Anwendung zur Beschleunigung des Lesens mittels **RSVP** (Rapid Serial Visual Presentation). Die Anwendung liest Texte aus der Zwischenablage oder aus Dateien und zeigt sie Wort für Wort oder in Gruppen an – schnell, fokussiert und augenschonend. SpeedReader läuft dezent im System-Tray und lässt sich bequem per Hotkey steuern.
+**SpeedReader** ist eine einfache, aber leistungsfähige Windows-Anwendung zur Beschleunigung des Lesens mittels **RSVP** (Rapid Serial Visual Presentation). Die Anwendung liest Texte aus der Zwischenablage oder aus Dateien (`.txt`, `.docx`, `.pdf`) und zeigt sie Wort für Wort oder in Wortgruppen an – schnell, fokussiert und augenschonend. SpeedReader läuft dezent im System-Tray und lässt sich bequem per Hotkey steuern.
 
-![Verwendung](example.png)  
-*Durch einen Rechtsklick auf das Symbol kann das Programm konfiguriert werden.*
+![Screenshot der Anwendung im Lesemodus](example.png)  
+*Ein Rechtsklick auf das Symbol öffnet das Menü.*
 
 ---
 
 ## 🔑 Hauptfunktionen
 
 ### 📖 RSVP-Anzeige
-- Textanzeige Wort für Wort oder in Wortgruppen.
-- Darstellung auf einem präzisen Canvas-Widget.
+- Textanzeige Wort für Wort oder in Wortgruppen (Chunking, 1–10 Wörter).
+- Darstellung auf einem präzisen Canvas-Widget für stabile Positionierung.
 - Minimiert Augenbewegungen durch festen Anzeigepunkt.
 
-### ⚙️ Einstellbare Lesegeschwindigkeit
-- Standard: **300 WPM**, Bereich: **50–1500 WPM**.
-- Geschwindigkeit über Schieberegler und direkte Eingabe steuerbar.
-- Anpassung auch während des Lesens mit `+`/`-` Tasten (jeweils ±10 WPM).
+### ⚙️ Einstellbare Lesegeschwindigkeit & Timing
+- **WPM**: Standard: 300 WPM, Bereich: 50–1500 WPM. Steuerbar über Schieberegler, direkte Eingabe und `+/-`-Tasten (±10 WPM).
+- **Startverzögerung**: Konfigurierbare Wartezeit (in ms), bevor der erste Textblock erscheint.
+- **Wortlängen-Verzögerung**: Zusätzliche Anzeigezeit pro Zeichen (nach Schwellenwert), um lange Wörter besser erfassbar zu machen.
 
-### 📚 Wortgruppen (Chunking)
-- Anzeige von **1–10 Wörtern** gleichzeitig.
-- Optionale Kontextanzeige (vorheriger/nächster Chunk) horizontal oder vertikal.
-
-### 🎯 Optimal Recognition Point (ORP)
-- Markiert Fixationspunkt pro Wort mit **rotem Buchstaben**.
-- Position frei einstellbar (0–100%).
-- Bei Chunk-Größe 1 wird das Wort automatisch zentriert.
+### 📚 Kontext & ORP
+- **Kontext-Anzeige**: Optional vorheriger und nächster Chunk sichtbar (horizontal oder vertikal).
+- **Optimal Recognition Point (ORP)**: Optionaler roter Buchstabe als Fixationspunkt (nur bei Chunk-Größe 1).
+  - Position einstellbar (0–100 %).
+  - Horizontale Zentrierung für stabilen Blickpunkt.
 
 ### ⏱️ Pausenmanagement
-- Zusatzpausen für:
-  - **Satzende (.)**
-  - **Kommas (,)**  
-  - **Absätze**
-- Millisekunden-genau konfigurierbar.
+- Konfigurierbare Zusatzpausen (in ms) für:
+  - Satzenden (`.`, `!`, `?`, `:`)
+  - Kommas (`,`)
+  - Absätze (Leerzeilen)
 
 ### 🎨 Anpassbares Aussehen
-- Frei wählbare Schriftart und -größe.
-- Anpassbare Farben (Text, Hintergrund, ORP).
-- **Dark Mode** für augenschonendes Lesen.
-- Optional rahmenloses Fenster mit "Immer im Vordergrund"-Modus.
+- Frei wählbare **Schriftart** und **-größe**.
+- Benutzerdefinierte Farben für Text, Hintergrund und ORP (inkl. Hell-/Dunkelmodus).
+- Optional **rahmenloses Lesefenster** mit „Immer im Vordergrund“-Funktion.
 
 ---
 
-## 🧭 Steuerung & Bedienung
+## 🖱️ Steuerung & Integration
 
-### System-Tray
-- Läuft im Hintergrund mit Tray-Symbol.
-- Lesestart aus Zwischenablage oder Datei via Tray-Menü.
-- Globaler Hotkey (**Standardmäßig Strg + Alt + R**) zum Lesen der Zwischenablage.
-
-### Lesefenster
-| Taste         | Funktion                                 |
-|---------------|------------------------------------------|
-| Leertaste     | Pause / Weiter                           |
-| Escape        | Fenster schließen                        |
-| Pfeiltasten   | Vorheriger / nächster Satz               |
-| `+` / `-`     | Geschwindigkeit anpassen (±10 WPM)       |
-| Enter         | Fenster schließen (am Leseende)          |
-
----
-
-## 🖥️ Systemintegration
-
+- Läuft im Hintergrund mit **System-Tray-Symbol**.
+- Menüfunktionen im Tray:
+  - Lesen aus Zwischenablage oder Datei
+  - Einstellungen
+  - Info (Version, Autor, Link)
+  - Beenden
+- **Globaler Hotkey** (Standard: `Strg + Alt + R`) zum Lesen aus der Zwischenablage.
+- **Unterstützte Dateiformate**: `.txt`, `.docx`, `.pdf`
+- Einstellungen werden gespeichert unter: %APPDATA%\SpeedReader\
 - Optionale **Autostart-Funktion** beim Windows-Login.
-- Alle Einstellungen werden unter  
-  `%APPDATA%\SpeedReader\` gespeichert.
+
+---
+
+## 🧭 Steuerung im Lesefenster
+
+| Taste             | Funktion                                                              |
+|------------------|-----------------------------------------------------------------------|
+| Leertaste         | Pause / Weiter                                                        |
+| Escape            | Fenster schließen                                                     |
+| Pfeil Links       | Zum Anfang des aktuellen oder vorherigen Satzes springen (pausiert)   |
+| Pfeil Rechts      | Zum Anfang des nächsten Satzes springen (pausiert)                    |
+| `+` / Numpad `+`  | Geschwindigkeit erhöhen (+10 WPM)                                     |
+| `-` / Numpad `-`  | Geschwindigkeit verringern (-10 WPM)                                  |
+| Enter             | Fenster schließen (nur wenn "`--- Ende ---`" angezeigt wird)          |
+
+---
+
+## 💾 Installation
+
+1. Lade die neueste Version von der [Releases-Seite](#) herunter.
+2. Verschieben sie die `SpeedReader.exe` an einen beliebigen Speicherplatz.
+3. Starte die Anwendung per Doppelklick auf `SpeedReader.exe`.
+4. Die Anwendung wird daraufhin im Hintergrund geöffnet und ist Einsatzbereit sobald sie in den Tray Icons auftaucht.
 
 ---
 
 ## 💡 Mitwirken
 
 Beiträge, Verbesserungsvorschläge und Bug-Reports sind willkommen!  
-Bitte öffne ein Issue.
+Bitte öffne ein [Issue](https://github.com/leofleischmann/Windows-Speed-Reader-RSVP/issues) oder erstelle einen Pull Request.
 
 ---
 
-## ❗ Bekannte Probleme
+## ❗ Bekannte Probleme / Hinweise
 
-- Die ORP-Darstellung funktioniert nur bei lateinischer Schrift zuverlässig.
-- Bei sehr großen Texten kann es zu kurzen Verzögerungen beim Start kommen.
+- Die Textextraktion aus **PDF-Dateien** ist nicht immer perfekt und kann bei komplexen Layouts oder Sonderzeichen fehlerhaft sein.
+- Die **ORP-Darstellung** funktioniert nur bei **lateinischer Schrift** zuverlässig.
+- Bei sehr großen Texten kann es zu kurzen **Verzögerungen beim Start** kommen.
 
 ---
 
 ## 🔍 Hinweis zur Code-Erstellung
 
-> **Hinweis:** Der Großteil des Quellcodes (ca. 99 %) wurde mithilfe von **Gemini 2.5 Pro** (Google AI) generiert.
+> **Hinweis**: Der Großteil des Quellcodes (ca. 99 %) wurde mithilfe von **Gemini (Google AI)** generiert und iterativ angepasst.
+
+---
