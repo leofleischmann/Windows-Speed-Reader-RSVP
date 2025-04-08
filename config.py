@@ -30,30 +30,30 @@ def get_appdata_path(filename="speed_reader_settings.json"):
 
 # --- Standardeinstellungen ---
 DEFAULT_SETTINGS = {
-    "wpm": 300,
-    "pause_punctuation": 0.5, # Sekunden
-    "pause_comma": 0.2,       # Sekunden
-    "pause_paragraph": 0.8,   # Sekunden
-    "font_family": "Arial",
-    "font_size": 48,
+    "wpm": 450,
+    "pause_punctuation": 0.02, # Sekunden
+    "pause_comma": 0.01,       # Sekunden
+    "pause_paragraph": 0.05,   # Sekunden
+    "font_family": "Segoe UI",
+    "font_size": 23,
     "font_color": "#000000",
     "highlight_color": "#FF0000",
     "background_color": "#F0F0F0",
     "hotkey": "<ctrl>+<alt>+r",
     "enable_orp": True,
-    "orp_position": 0.3,      # 0.0 - 1.0
+    "orp_position": 0.35,      # 0.0 - 1.0
     "reader_borderless": False,
     "reader_always_on_top": True,
     "hide_main_window": True,
-    "dark_mode": False,
+    "dark_mode": True,
     "chunk_size": 1,
     "show_context": False,         # Kontext Zeile oben/unten
     "context_layout": "vertical",  # 'vertical' or 'horizontal'
     "run_on_startup": False,
-    "initial_delay_ms": 1500,
-    "word_length_threshold": 8,    # Schwelle für längere Wörter
-    "extra_ms_per_char": 8,        # Extra ms pro Zeichen über Schwelle
-    "show_continuous_context": False # NEU: Kontinuierlichen Kontext unten anzeigen
+    "initial_delay_ms": 150,
+    "word_length_threshold": 3,    # Schwelle für längere Wörter
+    "extra_ms_per_char": 12,        # Extra ms pro Zeichen über Schwelle
+    "show_continuous_context": True # NEU: Kontinuierlichen Kontext unten anzeigen
 }
 SETTINGS_FILE = get_appdata_path()
 
