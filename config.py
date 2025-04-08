@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
     "pause_comma": 0.01,       # Sekunden
     "pause_paragraph": 0.05,   # Sekunden
     "font_family": "Segoe UI",
-    "font_size": 23,
+    "font_size": 30,
     "font_color": "#000000",
     "highlight_color": "#FF0000",
     "background_color": "#F0F0F0",
