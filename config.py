@@ -12,17 +12,28 @@ def get_appdata_path(filename="speed_reader_settings.json"):
         base_path = os.getenv('APPDATA')
         if not base_path: base_path = os.path.expanduser('~'); dir_path = os.path.join(base_path, f".{app_name}")
         else: dir_path = os.path.join(base_path, app_name)
-    else: base_path = os.path.expanduser('~'); dir_path = os.path.join(base_path, ".config", app_name)
-    try: os.makedirs(dir_path, exist_ok=True); print(f"Settings directory: {dir_path}")
-    except OSError as e: print(f"Warning: Could not create settings directory {dir_path}: {e}"); return filename
+    else: # macOS, Linux
+         base_path = os.path.expanduser('~')
+         dir_path = os.path.join(base_path, ".config", app_name)
+
+    # Ensure directory exists
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+        # Print only if directory was actually created or first time checking?
+        # Let's print always for debug purposes for now.
+        print(f"Settings directory: {dir_path}")
+    except OSError as e:
+         print(f"Warning: Could not create settings directory {dir_path}: {e}")
+         # Fallback to current directory if creation fails
+         return filename
     return os.path.join(dir_path, filename)
 
 # --- Standardeinstellungen ---
 DEFAULT_SETTINGS = {
     "wpm": 300,
-    "pause_punctuation": 0.2, # Sekunden
-    "pause_comma": 0.1,       # Sekunden
-    "pause_paragraph": 0.2,   # Sekunden
+    "pause_punctuation": 0.5, # Sekunden
+    "pause_comma": 0.2,       # Sekunden
+    "pause_paragraph": 0.8,   # Sekunden
     "font_family": "Arial",
     "font_size": 48,
     "font_color": "#000000",
@@ -30,18 +41,19 @@ DEFAULT_SETTINGS = {
     "background_color": "#F0F0F0",
     "hotkey": "<ctrl>+<alt>+r",
     "enable_orp": True,
-    "orp_position": 0.5,      # 0.0 - 1.0
+    "orp_position": 0.3,      # 0.0 - 1.0
     "reader_borderless": False,
     "reader_always_on_top": True,
     "hide_main_window": True,
     "dark_mode": False,
     "chunk_size": 1,
-    "show_context": False,
-    "context_layout": "vertical",
+    "show_context": False,         # Kontext Zeile oben/unten
+    "context_layout": "vertical",  # 'vertical' or 'horizontal'
     "run_on_startup": False,
-    "initial_delay_ms": 150,
-    "word_length_threshold": 7, # NEU: Schwelle für längere Wörter
-    "extra_ms_per_char": 10      # NEU: Extra ms pro Zeichen über Schwelle
+    "initial_delay_ms": 1500,
+    "word_length_threshold": 8,    # Schwelle für längere Wörter
+    "extra_ms_per_char": 8,        # Extra ms pro Zeichen über Schwelle
+    "show_continuous_context": False # NEU: Kontinuierlichen Kontext unten anzeigen
 }
 SETTINGS_FILE = get_appdata_path()
 
@@ -64,13 +76,14 @@ class ConfigManager:
                     settings.update(loaded_settings)
             else: print(f"Settings file not found: {self.filename}. Using defaults.")
 
-            # Ensure correct types
-            # Added word_length_threshold, extra_ms_per_char
+            # Ensure correct types after loading/updating
+            # Added word_length_threshold, extra_ms_per_char, initial_delay_ms
             for key in ['wpm', 'font_size', 'chunk_size', 'initial_delay_ms', 'word_length_threshold', 'extra_ms_per_char']:
                 if key in settings: settings[key] = int(settings[key])
             for key in ['pause_punctuation', 'pause_comma', 'pause_paragraph', 'orp_position']:
                  if key in settings: settings[key] = float(settings[key])
-            for key in ['enable_orp', 'reader_borderless', 'reader_always_on_top', 'hide_main_window', 'dark_mode', 'show_context', 'run_on_startup']:
+            # Added show_continuous_context
+            for key in ['enable_orp', 'reader_borderless', 'reader_always_on_top', 'hide_main_window', 'dark_mode', 'show_context', 'run_on_startup', 'show_continuous_context']:
                  if key in settings: settings[key] = bool(settings[key])
             if settings.get("context_layout") not in ["vertical", "horizontal"]:
                  settings["context_layout"] = self.defaults["context_layout"]
@@ -82,7 +95,7 @@ class ConfigManager:
         # Ensure valid ranges post-load or from defaults
         if settings.get("chunk_size", 1) < 1: settings["chunk_size"] = 1
         if settings.get("initial_delay_ms", 1500) < 0: settings["initial_delay_ms"] = 0
-        if settings.get("word_length_threshold", 8) < 0: settings["word_length_threshold"] = 0
+        if settings.get("word_length_threshold", 8) < 1: settings["word_length_threshold"] = 1
         if settings.get("extra_ms_per_char", 8) < 0: settings["extra_ms_per_char"] = 0
 
         return settings
@@ -93,7 +106,7 @@ class ConfigManager:
             # Ensure valid ranges before saving
             if self.settings.get("chunk_size", 1) < 1: self.settings["chunk_size"] = 1
             if self.settings.get("initial_delay_ms", 1500) < 0: self.settings["initial_delay_ms"] = 0
-            if self.settings.get("word_length_threshold", 8) < 0: self.settings["word_length_threshold"] = 0
+            if self.settings.get("word_length_threshold", 8) < 1: self.settings["word_length_threshold"] = 1
             if self.settings.get("extra_ms_per_char", 8) < 0: self.settings["extra_ms_per_char"] = 0
             if self.settings.get("context_layout") not in ["vertical", "horizontal"]:
                  self.settings["context_layout"] = self.defaults["context_layout"]
@@ -109,5 +122,11 @@ class ConfigManager:
         except IOError as e: print(f"Error saving settings to {self.filename}: {e}")
         except Exception as e: print(f"Unexpected error saving settings: {e}")
 
-    def get(self, key): return self.settings.get(key, self.defaults.get(key))
-    def set(self, key, value): self.settings[key] = value
+    def get(self, key):
+        """Gets a specific setting value."""
+        # Return default value from defaults dict if key is missing in settings
+        return self.settings.get(key, self.defaults.get(key))
+
+    def set(self, key, value):
+        """Sets a specific setting value."""
+        self.settings[key] = value
