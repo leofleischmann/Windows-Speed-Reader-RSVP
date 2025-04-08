@@ -178,7 +178,7 @@ class SettingsWindow(tk.Toplevel):
         context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal", variable=self.settings_vars["context_layout"], value="horizontal"); context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2), padx=5)
         # Show Continuous Context Snippet
         self.settings_vars["show_continuous_context"] = tk.BooleanVar(value=self.config.get("show_continuous_context"))
-        cont_context_check = ttk.Checkbutton(appearance_frame, text="Kontinuierlichen Kontext unten anzeigen (Textausschnitt)", variable=self.settings_vars["show_continuous_context"]);
+        cont_context_check = ttk.Checkbutton(appearance_frame, text="Beim pausieren Kontext unten anzeigen (Textausschnitt)", variable=self.settings_vars["show_continuous_context"]);
         cont_context_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(5, 2)) # Add below layout radios
 
         # --- Font & Colors Section ---
