@@ -14,6 +14,7 @@ except ImportError:
 # Import registry functions if on Windows
 if sys.platform == 'win32':
      try:
+          # Assuming system_utils.py is in the same directory
           from system_utils import add_to_startup, remove_from_startup, is_in_startup
           HAS_STARTUP_FUNC = True
      except ImportError:
@@ -29,8 +30,8 @@ else:
 
 class SettingsWindow(tk.Toplevel):
     """
-    Settings window with scrolling, integer inputs, dark mode, chunk size,
-    context toggle, startup option, and adaptive sizing.
+    Settings window with scrolling, configurable options including word length delay,
+    context display, dark mode, startup option, and improved styling.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
@@ -38,59 +39,31 @@ class SettingsWindow(tk.Toplevel):
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
 
-        # --- Adaptive Geometry --- KORRIGIERT ---
+        # --- Adaptive Geometry ---
         try:
-            # Get screen dimensions
             screen_width = self.winfo_screenwidth()
             screen_height = self.winfo_screenheight()
-
-            # Define desired proportions (adjust as needed)
-            width_proportion = 0.55 # 55% of screen width
-            height_proportion = 0.80 # 80% of screen height
-
-            # Define minimum size
-            min_w = 550
-            min_h = 650
-
-            # Calculate window dimensions
+            width_proportion = 0.55; height_proportion = 0.80
+            min_w = 550; min_h = 650
             win_width = max(min_w, int(screen_width * width_proportion))
             win_height = max(min_h, int(screen_height * height_proportion))
-
-            # Optional: Define maximum size relative to screen (e.g., max 90% height)
-            max_h = int(screen_height * 0.95)
-            win_height = min(win_height, max_h)
-            # Optional: Max width
-            # max_w = 1000
-            # win_width = min(win_width, max_w)
-
-
-            # Calculate position for centering
-            pos_x = (screen_width - win_width) // 2
-            pos_y = (screen_height - win_height) // 2
-
-            # Ensure position is not negative
-            pos_x = max(0, pos_x)
-            pos_y = max(0, pos_y)
-
-            # Set geometry
+            max_h = int(screen_height * 0.95); win_height = min(win_height, max_h)
+            pos_x = max(0, (screen_width - win_width) // 2)
+            pos_y = max(0, (screen_height - win_height) // 2)
             self.geometry(f"{win_width}x{win_height}+{pos_x}+{pos_y}")
-            # Set minimum size after setting initial geometry
             self.minsize(min_w, min_h)
             print(f"Calculated settings window geometry: {win_width}x{win_height}+{pos_x}+{pos_y}")
-
         except tk.TclError as e:
              print(f"Warning: Could not get screen dimensions, using default size. Error: {e}")
-             self.geometry("550x750") # Fallback size
-             self.minsize(550, 650)
-        # --- Ende Adaptive Geometry ---
-
+             self.geometry("550x750"); self.minsize(550, 650)
 
         # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.settings_vars = {} # Holds original vars from config
+        self.settings_vars = {} # Holds original vars linked to config
         self.ui_vars = {}       # Holds IntVars used for UI Spinboxes (ms, %)
 
+        # Store initial startup state to detect changes on save
         self.initial_run_on_startup = self.config.get("run_on_startup")
 
         # --- Styling ---
@@ -121,22 +94,35 @@ class SettingsWindow(tk.Toplevel):
         self.wait_visibility(); self.focus_set(); self.grab_set()
 
     def bind_mousewheel(self, widget):
-        widget.bind_all("<MouseWheel>", self._on_mousewheel, add='+'); widget.bind_all("<Button-4>", self._on_mousewheel, add='+'); widget.bind_all("<Button-5>", self._on_mousewheel, add='+')
+        """Binds mouse wheel scroll events for cross-platform compatibility."""
+        widget.bind_all("<MouseWheel>", self._on_mousewheel, add='+') # Windows & macOS (basic)
+        widget.bind_all("<Button-4>", self._on_mousewheel, add='+')   # Linux up
+        widget.bind_all("<Button-5>", self._on_mousewheel, add='+')   # Linux down
 
     def _on_mousewheel(self, event):
+        """Handles mouse wheel scroll events."""
         delta = 0
-        if hasattr(event, 'num') and event.num == 4: delta = -1
-        elif hasattr(event, 'num') and event.num == 5: delta = 1
-        elif hasattr(event, 'delta'):
+        if hasattr(event, 'num') and event.num == 4: delta = -1 # Linux up
+        elif hasattr(event, 'num') and event.num == 5: delta = 1  # Linux down
+        elif hasattr(event, 'delta'): # Windows and macOS
+             # Normalize delta (usually +/- 120 on Windows, smaller on macOS)
              if event.delta > 0: delta = -1
              elif event.delta < 0: delta = 1
-        if delta != 0: self.canvas.yview_scroll(delta, "units")
+        if delta != 0:
+            self.canvas.yview_scroll(delta, "units")
 
-    def _on_frame_configure(self, event=None): self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    def _on_frame_configure(self, event=None):
+        """Updates the scroll region when the inner frame size changes."""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
     def _on_canvas_configure(self, event=None):
-        if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists(): self.canvas.itemconfig(self.main_frame_id, width=self.canvas.winfo_width())
+        """Updates the inner frame's width to match the canvas width."""
+        if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists():
+             canvas_width = self.canvas.winfo_width()
+             self.canvas.itemconfig(self.main_frame_id, width=canvas_width)
 
     def _populate_settings_frame(self):
+        """Creates and places all the setting widgets inside self.main_frame."""
         # --- WPM & Timing Section ---
         wpm_frame = ttk.LabelFrame(self.main_frame, text="Geschwindigkeit & Timing", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15))
         self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm")); self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
@@ -185,11 +171,15 @@ class SettingsWindow(tk.Toplevel):
         self.settings_vars["dark_mode"] = tk.BooleanVar(value=self.config.get("dark_mode"))
         dark_mode_check = ttk.Checkbutton(appearance_frame, text="Dark Mode aktivieren (im Lesefenster)", variable=self.settings_vars["dark_mode"]); dark_mode_check.grid(row=0, column=0, columnspan=3, sticky="w", pady=(2, 5))
         self.settings_vars["show_context"] = tk.BooleanVar(value=self.config.get("show_context"))
-        show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (vorheriges/nächstes Wort)", variable=self.settings_vars["show_context"]); show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
+        show_context_check = ttk.Checkbutton(appearance_frame, text="Kontext anzeigen (oben/unten oder links/rechts)", variable=self.settings_vars["show_context"]); show_context_check.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
         self.settings_vars["context_layout"] = tk.StringVar(value=self.config.get("context_layout"))
         ttk.Label(appearance_frame, text="Kontext-Layout:").grid(row=2, column=0, sticky="w", pady=(5, 2), padx=(15,0))
         context_vert_radio = ttk.Radiobutton(appearance_frame, text="Vertikal", variable=self.settings_vars["context_layout"], value="vertical"); context_vert_radio.grid(row=2, column=1, sticky="w", pady=(5,2), padx=5)
         context_horz_radio = ttk.Radiobutton(appearance_frame, text="Horizontal", variable=self.settings_vars["context_layout"], value="horizontal"); context_horz_radio.grid(row=2, column=2, sticky="w", pady=(5,2), padx=5)
+        # Show Continuous Context Snippet
+        self.settings_vars["show_continuous_context"] = tk.BooleanVar(value=self.config.get("show_continuous_context"))
+        cont_context_check = ttk.Checkbutton(appearance_frame, text="Kontinuierlichen Kontext unten anzeigen (Textausschnitt)", variable=self.settings_vars["show_continuous_context"]);
+        cont_context_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(5, 2)) # Add below layout radios
 
         # --- Font & Colors Section ---
         font_frame = ttk.LabelFrame(self.main_frame, text="Farben & Schriftart (Hell-Modus)", padding="15"); font_frame.pack(fill="x", pady=(0, 15))
@@ -255,15 +245,29 @@ class SettingsWindow(tk.Toplevel):
 
     # --- Callback Methods ---
     def _update_wpm_label(self, *args):
+        """Callback for the WPM variable trace to update the label."""
         try:
+            # Diese Zeilen sind jetzt KORREKT im try-Block eingerückt
             current_wpm = self.settings_vars["wpm"].get()
-            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists(): self.wpm_label.config(text=f"{int(current_wpm)} WPM")
-        except (ValueError, tk.TclError, AttributeError): pass
+            if hasattr(self, 'wpm_label') and self.wpm_label.winfo_exists():
+                self.wpm_label.config(text=f"{int(current_wpm)} WPM")
+        # Dieser except-Block folgt korrekt nach dem try-Block
+        except (ValueError, tk.TclError, AttributeError):
+            # Handle errors if variable is invalid or widget destroyed
+            pass
+
     def _update_orp_label(self, *args):
+        """Callback for the ORP UI variable trace to update the label."""
         try:
+            # Diese Zeilen sind jetzt KORREKT im try-Block eingerückt
             current_orp_percent = self.ui_vars["orp_position_percent"].get()
-            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists(): self.orp_label.config(text=f"{current_orp_percent}%")
-        except (ValueError, tk.TclError, AttributeError): pass
+            if hasattr(self, 'orp_label') and self.orp_label.winfo_exists():
+                self.orp_label.config(text=f"{current_orp_percent}%")
+        # Dieser except-Block folgt korrekt nach dem try-Block
+        except (ValueError, tk.TclError, AttributeError):
+            # Handle errors if variable is invalid or widget destroyed
+            pass
+
     def _choose_color(self, setting_key, update_callback=None):
         current_color = self.settings_vars[setting_key].get()
         try: color_code = colorchooser.askcolor(title=f"Farbe wählen für '{setting_key}'", initialcolor=current_color, parent=self)
@@ -278,13 +282,12 @@ class SettingsWindow(tk.Toplevel):
                 if preview_widget and preview_widget.winfo_exists(): preview_widget.config(bg=hex_color)
             except tk.TclError: pass
             if update_callback: update_callback()
-
-    # Korrekte _update_font_preview method
     def _update_font_preview(self, *args):
         """Updates the font preview label based on current settings."""
         try: # Äußerer try-Block für allgemeine Fehler
             # Widget-Existenz prüfen
-            if not hasattr(self, 'font_preview_label') or not self.font_preview_label.winfo_exists(): return
+            if not hasattr(self, 'font_preview_label') or not self.font_preview_label.winfo_exists():
+                return
 
             # Werte holen
             family = self.settings_vars["font_family"].get()
@@ -295,8 +298,10 @@ class SettingsWindow(tk.Toplevel):
             # Größe validieren
             try: # Innerer try-Block für Größen-Validierung
                 size = int(size_str)
-                if size < 1: size = 1
-            # Direkt folgender except-Block für Größen-Validierung
+                # Das 'if' gehört HIERHIN, *nachdem* int() erfolgreich war:
+                if size < 1:
+                    size = 1
+            # Dieser except-Block fängt Fehler von int(size_str) ab:
             except (ValueError, TypeError):
                 self.font_preview_label.config(text="Ungültige Größe", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
                 return # Funktion verlassen bei ungültiger Größe
@@ -305,7 +310,7 @@ class SettingsWindow(tk.Toplevel):
             try: # Innerer try-Block für Schriftart-Erstellung
                 preview_font_size = max(8, int(size * 0.6))
                 preview_font = font.Font(family=family, size=preview_font_size)
-            # Direkt folgender except-Block für Schriftart-Erstellung
+            # Dieser except-Block fängt Fehler von font.Font() ab:
             except tk.TclError:
                  self.font_preview_label.config(text="Ungültige Schriftart", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
                  return # Funktion verlassen bei ungültiger Schriftart
@@ -324,9 +329,11 @@ class SettingsWindow(tk.Toplevel):
             print(f"Unexpected error during font preview update: {e}")
             print(traceback.format_exc())
             try:
+                # Versuche, Fehler im Label anzuzeigen
                 if hasattr(self, 'font_preview_label') and self.font_preview_label.winfo_exists():
                     self.font_preview_label.config(text="Vorschau Fehler", font=font.nametofont("TkDefaultFont"), fg="red", bg="white")
-            except: pass # Fehler beim Anzeigen des Fehlers ignorieren
+            except:
+                pass # Fehler beim Anzeigen des Fehlers ignorieren
 
     # --- Hotkey Recording Methods ---
     def _record_hotkey(self):
@@ -417,15 +424,13 @@ class SettingsWindow(tk.Toplevel):
                      if not isinstance(value, float) or not (0.0 <= value <= 1.0): messagebox.showerror("Ungültiger Wert", f"ORP Position: 0.0-1.0.", parent=self); return
                 elif key in ["pause_punctuation", "pause_comma", "pause_paragraph"]:
                      if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert für '{key}': >= 0.", parent=self); return
-                elif key == "initial_delay_ms": # Validate delay
+                elif key == "initial_delay_ms":
                      if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Startverzögerung: >= 0 ms.", parent=self); return
-                # --- NEU: Validate word length delay settings ---
                 elif key == "word_length_threshold":
                      if not isinstance(value, int) or value < 1: messagebox.showerror("Ungültiger Wert", f"Wortlängen-Schwelle: >= 1.", parent=self); return
                 elif key == "extra_ms_per_char":
                      if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Extra Zeit pro Zeichen: >= 0 ms.", parent=self); return
-                # --- Ende NEU ---
-                elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top", "run_on_startup"]:
+                elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top", "run_on_startup", "show_continuous_context"]: # Added show_continuous_context
                      if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"'{key}' muss An/Aus sein.", parent=self); return
                 elif key == "context_layout":
                      if value not in ["vertical", "horizontal"]: messagebox.showerror("Ungültiger Wert", f"'{key}' muss 'vertical' oder 'horizontal' sein.", parent=self); return
@@ -434,7 +439,6 @@ class SettingsWindow(tk.Toplevel):
                 self.config.set(key, value)
 
             # --- Handle Startup Registry Change ---
-            # Compare new state with initial state loaded when window opened
             new_startup_state = False
             if sys.platform == 'win32' and HAS_STARTUP_FUNC:
                 new_startup_state = self.settings_vars["run_on_startup"].get()
@@ -449,7 +453,6 @@ class SettingsWindow(tk.Toplevel):
                               if not remove_from_startup(): messagebox.showerror("Fehler Autostart", "Konnte nicht aus Autostart entfernen.", parent=self)
                     else:
                          print("Not running as bundled app, skipping registry modification.")
-                         # Revert the setting variable if change was attempted outside bundled app
                          self.settings_vars["run_on_startup"].set(self.initial_run_on_startup)
                          self.config.set("run_on_startup", self.initial_run_on_startup) # Also revert in config obj
 
