@@ -42,7 +42,7 @@ class ReadingWindow(tk.Toplevel):
 
         # --- Window Geometry and Appearance ---
         screen_width = self.winfo_screenwidth(); screen_height = self.winfo_screenheight()
-        width = int(screen_width * 0.8); height = int(screen_height * 0.4)
+        width = int(screen_width * 0.6); height = int(screen_height * 0.5)
         x = (screen_width - width) // 2; y = (screen_height - height) // 2
         self.geometry(f"{width}x{height}+{x}+{y}")
         if self.config.get("reader_borderless"): self.overrideredirect(True)
