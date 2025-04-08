@@ -29,14 +29,62 @@ else:
 
 class SettingsWindow(tk.Toplevel):
     """
-    Settings window including configuration for word length delay.
+    Settings window with scrolling, integer inputs, dark mode, chunk size,
+    context toggle, startup option, and adaptive sizing.
     """
     def __init__(self, parent, config_manager, on_close_callback):
         super().__init__(parent)
         self.config = config_manager
         self.on_close_callback = on_close_callback
         self.title("Einstellungen")
-        self.geometry("550x800") # Keep size, scrolling handles overflow
+
+        # --- Adaptive Geometry --- KORRIGIERT ---
+        try:
+            # Get screen dimensions
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+
+            # Define desired proportions (adjust as needed)
+            width_proportion = 0.55 # 55% of screen width
+            height_proportion = 0.80 # 80% of screen height
+
+            # Define minimum size
+            min_w = 550
+            min_h = 650
+
+            # Calculate window dimensions
+            win_width = max(min_w, int(screen_width * width_proportion))
+            win_height = max(min_h, int(screen_height * height_proportion))
+
+            # Optional: Define maximum size relative to screen (e.g., max 90% height)
+            max_h = int(screen_height * 0.95)
+            win_height = min(win_height, max_h)
+            # Optional: Max width
+            # max_w = 1000
+            # win_width = min(win_width, max_w)
+
+
+            # Calculate position for centering
+            pos_x = (screen_width - win_width) // 2
+            pos_y = (screen_height - win_height) // 2
+
+            # Ensure position is not negative
+            pos_x = max(0, pos_x)
+            pos_y = max(0, pos_y)
+
+            # Set geometry
+            self.geometry(f"{win_width}x{win_height}+{pos_x}+{pos_y}")
+            # Set minimum size after setting initial geometry
+            self.minsize(min_w, min_h)
+            print(f"Calculated settings window geometry: {win_width}x{win_height}+{pos_x}+{pos_y}")
+
+        except tk.TclError as e:
+             print(f"Warning: Could not get screen dimensions, using default size. Error: {e}")
+             self.geometry("550x750") # Fallback size
+             self.minsize(550, 650)
+        # --- Ende Adaptive Geometry ---
+
+
         # self.transient(parent) # Keep REMOVED
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -89,20 +137,17 @@ class SettingsWindow(tk.Toplevel):
         if hasattr(self, 'main_frame_id') and self.main_frame.winfo_exists(): self.canvas.itemconfig(self.main_frame_id, width=self.canvas.winfo_width())
 
     def _populate_settings_frame(self):
-        # --- WPM & Timing Section --- NEU: Timing hinzugefügt
+        # --- WPM & Timing Section ---
         wpm_frame = ttk.LabelFrame(self.main_frame, text="Geschwindigkeit & Timing", padding="15"); wpm_frame.pack(fill="x", pady=(0, 15))
-        # WPM
         self.settings_vars["wpm"] = tk.IntVar(value=self.config.get("wpm")); self.settings_vars["wpm"].trace_add("write", self._update_wpm_label)
         ttk.Label(wpm_frame, text="WPM:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
         wpm_scale = ttk.Scale(wpm_frame, from_=50, to=1500, orient="horizontal", variable=self.settings_vars["wpm"]); wpm_scale.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         wpm_spinbox = ttk.Spinbox(wpm_frame, from_=50, to=1500, increment=10, textvariable=self.settings_vars["wpm"], width=6); wpm_spinbox.grid(row=0, column=2, sticky="w", padx=5, pady=5)
         self.wpm_label = ttk.Label(wpm_frame, text="", width=8, anchor="e"); self.wpm_label.grid(row=0, column=3, sticky="e", padx=(5, 0), pady=5)
-        # Initial Delay
         self.settings_vars["initial_delay_ms"] = tk.IntVar(value=self.config.get("initial_delay_ms"))
         ttk.Label(wpm_frame, text="Startverzögerung:").grid(row=1, column=0, sticky="w", padx=(0, 5), pady=5)
         delay_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=10000, increment=100, textvariable=self.settings_vars["initial_delay_ms"], width=6); delay_spinbox.grid(row=1, column=1, columnspan=2, sticky="w", padx=5, pady=5)
         ttk.Label(wpm_frame, text="ms").grid(row=1, column=3, sticky="w", padx=(5, 0), pady=5)
-        # Word Length Delay - NEU
         self.settings_vars["word_length_threshold"] = tk.IntVar(value=self.config.get("word_length_threshold"))
         self.settings_vars["extra_ms_per_char"] = tk.IntVar(value=self.config.get("extra_ms_per_char"))
         ttk.Label(wpm_frame, text="Wortlängen-Schwelle:").grid(row=2, column=0, sticky="w", padx=(0, 5), pady=5)
@@ -111,8 +156,7 @@ class SettingsWindow(tk.Toplevel):
         ttk.Label(wpm_frame, text="Extra Zeit pro Zeichen:").grid(row=3, column=0, sticky="w", padx=(0, 5), pady=5)
         extra_ms_spinbox = ttk.Spinbox(wpm_frame, from_=0, to=50, increment=1, textvariable=self.settings_vars["extra_ms_per_char"], width=4); extra_ms_spinbox.grid(row=3, column=1, sticky="w", padx=5, pady=5)
         ttk.Label(wpm_frame, text="ms (über Schwelle)").grid(row=3, column=2, columnspan=2, sticky="w", padx=5, pady=5)
-
-        wpm_frame.columnconfigure(1, weight=1) # Make scale expand
+        wpm_frame.columnconfigure(1, weight=1)
 
         # --- Chunk Size Section ---
         chunk_frame = ttk.LabelFrame(self.main_frame, text="Wortgruppengröße (Chunking)", padding="15"); chunk_frame.pack(fill="x", pady=(0, 15))
@@ -234,7 +278,7 @@ class SettingsWindow(tk.Toplevel):
                 if preview_widget and preview_widget.winfo_exists(): preview_widget.config(bg=hex_color)
             except tk.TclError: pass
             if update_callback: update_callback()
-            
+
     # Korrekte _update_font_preview method
     def _update_font_preview(self, *args):
         """Updates the font preview label based on current settings."""
@@ -347,25 +391,7 @@ class SettingsWindow(tk.Toplevel):
     def save_and_close(self):
         """Saves all settings (converting UI vars back) and handles startup registry."""
         try:
-            # --- Convert UI vars and handle Startup Registry ---
-            new_startup_state = False
-            if sys.platform == 'win32' and HAS_STARTUP_FUNC:
-                new_startup_state = self.settings_vars["run_on_startup"].get()
-                if new_startup_state != self.initial_run_on_startup:
-                    print(f"Run on startup changed from {self.initial_run_on_startup} to {new_startup_state}")
-                    exe_path = sys.executable
-                    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                         print(f"Running as bundled app: {exe_path}")
-                         if new_startup_state:
-                              if not add_to_startup(exe_path): messagebox.showerror("Fehler Autostart", "Konnte nicht zum Autostart hinzufügen.", parent=self)
-                         else:
-                              if not remove_from_startup(): messagebox.showerror("Fehler Autostart", "Konnte nicht aus Autostart entfernen.", parent=self)
-                    else:
-                         print("Not running as bundled app, skipping registry modification.")
-                         new_startup_state = self.initial_run_on_startup
-                         self.settings_vars["run_on_startup"].set(new_startup_state)
-
-            # Convert other UI vars
+            # Convert UI IntVars back to original DoubleVars/IntVars/StringVars before saving
             orp_percent = self.ui_vars["orp_position_percent"].get()
             self.settings_vars["orp_position"].set(max(0.0, min(1.0, orp_percent / 100.0)))
             pause_punct_ms = self.ui_vars["pause_punctuation_ms"].get()
@@ -393,10 +419,12 @@ class SettingsWindow(tk.Toplevel):
                      if not isinstance(value, float) or value < 0: messagebox.showerror("Ungültiger Wert", f"Pausenwert für '{key}': >= 0.", parent=self); return
                 elif key == "initial_delay_ms": # Validate delay
                      if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Startverzögerung: >= 0 ms.", parent=self); return
-                elif key == "word_length_threshold": # Validate threshold
+                # --- NEU: Validate word length delay settings ---
+                elif key == "word_length_threshold":
                      if not isinstance(value, int) or value < 1: messagebox.showerror("Ungültiger Wert", f"Wortlängen-Schwelle: >= 1.", parent=self); return
-                elif key == "extra_ms_per_char": # Validate extra ms
+                elif key == "extra_ms_per_char":
                      if not isinstance(value, int) or value < 0: messagebox.showerror("Ungültiger Wert", f"Extra Zeit pro Zeichen: >= 0 ms.", parent=self); return
+                # --- Ende NEU ---
                 elif key in ["dark_mode", "show_context", "enable_orp", "reader_borderless", "reader_always_on_top", "run_on_startup"]:
                      if not isinstance(value, bool): messagebox.showerror("Ungültiger Wert", f"'{key}' muss An/Aus sein.", parent=self); return
                 elif key == "context_layout":
@@ -405,7 +433,29 @@ class SettingsWindow(tk.Toplevel):
                 # Set validated value in config manager
                 self.config.set(key, value)
 
+            # --- Handle Startup Registry Change ---
+            # Compare new state with initial state loaded when window opened
+            new_startup_state = False
+            if sys.platform == 'win32' and HAS_STARTUP_FUNC:
+                new_startup_state = self.settings_vars["run_on_startup"].get()
+                if new_startup_state != self.initial_run_on_startup:
+                    print(f"Run on startup changed from {self.initial_run_on_startup} to {new_startup_state}")
+                    exe_path = sys.executable
+                    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                         print(f"Running as bundled app: {exe_path}")
+                         if new_startup_state:
+                              if not add_to_startup(exe_path): messagebox.showerror("Fehler Autostart", "Konnte nicht zum Autostart hinzufügen.", parent=self)
+                         else:
+                              if not remove_from_startup(): messagebox.showerror("Fehler Autostart", "Konnte nicht aus Autostart entfernen.", parent=self)
+                    else:
+                         print("Not running as bundled app, skipping registry modification.")
+                         # Revert the setting variable if change was attempted outside bundled app
+                         self.settings_vars["run_on_startup"].set(self.initial_run_on_startup)
+                         self.config.set("run_on_startup", self.initial_run_on_startup) # Also revert in config obj
+
+            # Save all settings to file
             self.config.save_settings()
+            # Close the window
             self.on_close()
         except Exception as e:
             messagebox.showerror("Fehler beim Speichern", f"Einstellungen konnten nicht gespeichert werden:\n{e}", parent=self)
