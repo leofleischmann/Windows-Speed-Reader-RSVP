@@ -15,7 +15,7 @@ CONTEXT_FG_LIGHT = "#a0a0a0"; CONTEXT_FG_DARK = "#606060" # Context colors
 
 # --- Constants ---
 CONTEXT_SNIPPET_WORDS = 7 # Number of words before/after current word/chunk start for snippet
-MAX_SNIPPET_LEN = 120 # Max character length for context snippet label
+MAX_SNIPPET_LEN = 130 # Max character length for context snippet label
 
 class ReadingWindow(tk.Toplevel):
     """
