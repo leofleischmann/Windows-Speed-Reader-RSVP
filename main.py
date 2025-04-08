@@ -8,6 +8,11 @@ import json
 import os
 import sys
 import traceback # For detailed error messages
+import webbrowser # Für das Öffnen von Links
+
+# --- App Konstanten ---
+APP_VERSION = "1.1" # Versionsnummer definieren
+GITHUB_REPO_URL = "https://github.com/leofleischmann/Windows-Speed-Reader-RSVP"
 
 # --- Dependency Imports ---
 try: from pynput import keyboard; HAS_PYNPUT = True
@@ -16,6 +21,12 @@ try: import pyperclip; HAS_PYPERCLIP = True
 except ImportError: HAS_PYPERCLIP = False; print("Warning: 'pyperclip' not found.")
 try: import pystray; from PIL import Image; HAS_PYSTRAY = True
 except ImportError: HAS_PYSTRAY = False; # Pillow check in utils
+
+# --- Imports für DOCX und PDF ---
+try: import docx; HAS_DOCX = True
+except ImportError: HAS_DOCX = False; print("Warning: 'python-docx' not found."); print("Install with: pip install python-docx")
+try: from PyPDF2 import PdfReader; HAS_PYPDF2 = True
+except ImportError: HAS_PYPDF2 = False; print("Warning: 'PyPDF2' not found."); print("Install with: pip install PyPDF2")
 
 # --- NEU: Import für PID Check ---
 try:
@@ -27,11 +38,6 @@ except ImportError:
     print("Install with: pip install psutil")
 # --- Ende NEU ---
 
-# --- Imports für DOCX und PDF ---
-try: import docx; HAS_DOCX = True
-except ImportError: HAS_DOCX = False; print("Warning: 'python-docx' not found."); print("Install with: pip install python-docx")
-try: from PyPDF2 import PdfReader; HAS_PYPDF2 = True
-except ImportError: HAS_PYPDF2 = False; print("Warning: 'PyPDF2' not found."); print("Install with: pip install PyPDF2")
 
 # --- Local Module Imports ---
 try:
@@ -60,7 +66,7 @@ def extract_text_from_docx(filepath):
     if not HAS_DOCX: messagebox.showerror("Fehler", "'python-docx' ist nicht installiert."); return None
     try:
         doc = docx.Document(filepath); full_text = [para.text for para in doc.paragraphs]
-        return '\n\n'.join(full_text)
+        return '\n\n'.join(full_text) # Join paragraphs with double newline
     except Exception as e: messagebox.showerror("DOCX Fehler", f"Fehler beim Lesen der DOCX-Datei:\n{e}"); print(traceback.format_exc()); return None
 
 def extract_text_from_pdf(filepath):
@@ -68,17 +74,35 @@ def extract_text_from_pdf(filepath):
     if not HAS_PYPDF2: messagebox.showerror("Fehler", "'PyPDF2' ist nicht installiert."); return None
     try:
         full_text = []; reader = PdfReader(filepath)
+        # Check if encrypted and cannot be decrypted with empty password
         if reader.is_encrypted:
-             try: reader.decrypt('')
-             except Exception as decrypt_err: print(f"PDF Decryption failed: {decrypt_err}"); messagebox.showerror("PDF Fehler", "PDF ist verschlüsselt."); return None
+             try:
+                  reader.decrypt('') # Try empty password
+             except Exception as decrypt_err:
+                  print(f"PDF Decryption failed: {decrypt_err}")
+                  messagebox.showerror("PDF Fehler", "PDF ist verschlüsselt und konnte nicht geöffnet werden.")
+                  return None
+
         for page in reader.pages:
             try:
                 page_text = page.extract_text()
-                if page_text: full_text.append(page_text)
-            except Exception as e_page: print(f"Warning: Could not extract text from a PDF page: {e_page}"); full_text.append("[Seite konnte nicht gelesen werden]")
-        if not full_text: messagebox.showwarning("PDF Inhalt", "Konnte keinen Text aus PDF extrahieren."); return None
+                if page_text: # Add text only if extraction was successful
+                     full_text.append(page_text)
+            except Exception as e_page:
+                 print(f"Warning: Could not extract text from a PDF page: {e_page}")
+                 # Optionally add a placeholder or skip the page
+                 full_text.append("[Seite konnte nicht gelesen werden]")
+        if not full_text:
+             messagebox.showwarning("PDF Inhalt", "Konnte keinen Text aus der PDF-Datei extrahieren.\nEnthält sie möglicherweise nur Bilder oder ist verschlüsselt?")
+             return None
+        # Join pages with double newline to simulate paragraphs between pages
         return '\n\n'.join(full_text)
-    except Exception as e: messagebox.showerror("PDF Fehler", f"Fehler beim Lesen der PDF-Datei:\n{e}"); print(traceback.format_exc()); return None
+    except Exception as e:
+        messagebox.showerror("PDF Fehler", f"Fehler beim Lesen der PDF-Datei:\n{e}\n(Ist die Datei verschlüsselt?)")
+        print(traceback.format_exc())
+        return None
+# --- Ende Helper functions ---
+
 
 # --- Main Application Class ---
 class SpeedReaderApp:
@@ -143,10 +167,29 @@ class SpeedReaderApp:
             icon_path = resource_path(DEFAULT_ICON_NAME)
             icon_image = Image.open(icon_path) if os.path.exists(icon_path) else create_default_icon()
             if not icon_image: print("Error: Tray icon image not found or created."); self.tray_icon = None; return
+
+            # Info-Untermenü definieren
+            info_submenu = pystray.Menu(
+                pystray.MenuItem(f'Version: {APP_VERSION}', None, enabled=False),
+                pystray.MenuItem('Erstellt von: Leo Fleischmann', None, enabled=False),
+                pystray.MenuItem('GitHub Repo...', self.open_repo_url)
+            )
+
+            # Hauptmenü definieren
             menu_items = []
-            cb_state = HAS_PYPERCLIP; menu_items.append(pystray.MenuItem('Lesen aus Zwischenablage', self.on_tray_read_clipboard, enabled=cb_state))
-            menu_items.extend([ pystray.MenuItem('Datei lesen...', self.on_tray_read_file), pystray.MenuItem('Einstellungen...', self.on_tray_open_settings), pystray.MenuItem(f'Hotkey: {self.config.get("hotkey")}', None, enabled=False), pystray.MenuItem('Beenden', self.on_tray_quit) ])
+            cb_state = HAS_PYPERCLIP
+            menu_items.append(pystray.MenuItem('Lesen aus Zwischenablage', self.on_tray_read_clipboard, enabled=cb_state))
+            menu_items.extend([
+                pystray.MenuItem('Datei lesen...', self.on_tray_read_file),
+                pystray.MenuItem('Einstellungen...', self.on_tray_open_settings),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem('Infobereich', info_submenu),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(f'Hotkey: {self.config.get("hotkey")}', None, enabled=False),
+                pystray.MenuItem('Beenden', self.on_tray_quit)
+            ])
             tray_menu = pystray.Menu(*menu_items)
+
             self.tray_icon = pystray.Icon("SpeedReader", icon=icon_image, title="Speed Reader", menu=tray_menu)
             print("System tray icon configured.")
         except Exception as e: print(f"Error setting up tray icon: {e}"); traceback.print_exc(); self.tray_icon = None
@@ -159,6 +202,16 @@ class SpeedReaderApp:
             except Exception as e: print(f"Error running pystray icon: {e}")
             finally: print("Pystray icon loop finished.")
         else: print("Tray icon not available.")
+
+    # Methode zum Öffnen des Repo-Links
+    def open_repo_url(self, icon=None, item=None):
+        """Opens the GitHub repository URL in the default web browser."""
+        try:
+            print(f"Opening URL: {GITHUB_REPO_URL}")
+            webbrowser.open_new_tab(GITHUB_REPO_URL)
+        except Exception as e:
+            print(f"Error opening URL {GITHUB_REPO_URL}: {e}")
+            messagebox.showerror("Fehler", f"Konnte die URL nicht öffnen:\n{GITHUB_REPO_URL}\n\nFehler: {e}")
 
     # --- Tray Menu Action Wrappers --- Als Methoden definiert ---
     def on_tray_read_clipboard(self, icon=None, item=None):
@@ -198,6 +251,7 @@ class SpeedReaderApp:
         def on_activate():
             """Action to perform when the hotkey is pressed."""
             print(f"Hotkey '{hotkey_str}' activated!")
+            # Correctly indented block
             if HAS_PYPERCLIP:
                 self.root.after(0, self.read_from_clipboard)
             else:
@@ -219,11 +273,10 @@ class SpeedReaderApp:
     def stop_hotkey_listener(self):
         """Stops the global hotkey listener thread if it exists."""
         listener = self.hotkey_listener
-        if listener:
-            print("Stopping hotkey listener...")
-            try: listener.stop(); self.hotkey_listener = None
-            except Exception as e: print(f"Error stopping hotkey listener: {e}")
-        # else: print("Hotkey listener was not running.") # Removed else for cleaner log
+        if listener: print("Stopping hotkey listener...");
+        try: listener.stop(); self.hotkey_listener = None
+        except Exception as e: print(f"Error stopping hotkey listener: {e}")
+        # else: print("Hotkey listener was not running.")
         thread = self.listener_thread
         if thread and thread.is_alive(): print("Waiting for listener thread..."); thread.join(timeout=0.5);
         if thread and thread.is_alive(): print("Warning: Listener thread did not stop.")
@@ -238,6 +291,8 @@ class SpeedReaderApp:
             print("Settings window closed."); self.settings_window_instance = None; print("Restarting hotkey listener...");
             if HAS_PYNPUT: self.start_hotkey_listener()
             if self.reading_window_instance and self.reading_window_instance.winfo_exists(): print("Applying settings to reading window..."); self.reading_window_instance.update_display_settings()
+            # Update tray menu in case hotkey changed
+            if self.tray_icon: print("Updating tray icon menu..."); self.setup_tray_icon()
             self.update_status_label()
         root_was_hidden = False
         try:
@@ -275,9 +330,14 @@ class SpeedReaderApp:
         print("Reading from clipboard...")
         try:
             text = pyperclip.paste()
-            if text: self._initiate_reading(text)
-            else: messagebox.showinfo("Zwischenablage leer", "Kein Text in Zwischenablage.")
-        except Exception as e: error_msg = f"Fehler beim Clipboard-Zugriff oder Lesen:\n{e}"; print(error_msg); traceback.print_exc(); messagebox.showerror("Fehler", error_msg)
+            # Corrected: if/else block is now inside the try
+            if text:
+                self._initiate_reading(text)
+            else:
+                messagebox.showinfo("Zwischenablage leer", "Kein Text in Zwischenablage.")
+        except Exception as e: # Catch potential errors from pyperclip or _initiate_reading
+            error_msg = f"Fehler beim Clipboard-Zugriff oder Lesen:\n{e}"
+            print(error_msg); traceback.print_exc(); messagebox.showerror("Fehler", error_msg)
 
     def read_from_file(self):
         """Opens file dialog, reads text from txt, docx, pdf and starts reading."""
@@ -314,219 +374,155 @@ class SpeedReaderApp:
         except Exception as e: error_msg = f"Datei konnte nicht gelesen werden:\n{filepath}\n\nFehler: {e}"; print(error_msg); traceback.print_exc(); messagebox.showerror("Fehler Dateizugriff", error_msg)
 
     def quit_app(self):
-        """Räumt Ressourcen auf und schließt die Anwendung."""
-        # Verhindert mehrfachen Aufruf während des Beendens
-        if self.is_shutting_down:
-            return
+        """Cleans up resources and closes the application."""
+        if self.is_shutting_down: return
         self.is_shutting_down = True
         print("Quit requested. Cleaning up...")
 
-        # Hintergrund-Threads zuerst stoppen
         self.stop_hotkey_listener()
-        if self.tray_icon:
-            print("Stopping tray icon...")
-            self.tray_icon.stop() # Stoppt die pystray-Schleife
-        if self.tray_thread and self.tray_thread.is_alive():
-            print("Waiting for tray thread...")
-            self.tray_thread.join(timeout=0.5) # Wartet kurz auf Thread-Ende
+        if self.tray_icon: print("Stopping tray icon..."); self.tray_icon.stop()
+        if self.tray_thread and self.tray_thread.is_alive(): print("Waiting for tray thread..."); self.tray_thread.join(timeout=0.5)
 
         print("Closing open windows...")
-        # Bekannte Toplevel-Fenster sicher zerstören
+        # Corrected syntax: use 'except' and proper indentation
         if self.settings_window_instance and self.settings_window_instance.winfo_exists():
              print("Destroying settings window...")
              try:
                   self.settings_window_instance.destroy()
              except tk.TclError:
-                  # Fehler ignorieren, falls Fenster schon zerstört wurde
-                  pass
+                  pass # Ignore error if already destroyed
         if self.reading_window_instance and self.reading_window_instance.winfo_exists():
              print("Destroying reading window...")
              try:
                   self.reading_window_instance.destroy()
              except tk.TclError:
-                  # Fehler ignorieren, falls Fenster schon zerstört wurde
-                  pass
-
-        # Alle anderen potenziellen Toplevel-Fenster zerstören, die vom root abhängen
-        # Wichtig: Prüfen, ob root noch existiert, bevor auf Kinder zugegriffen wird
+                  pass # Ignore error if already destroyed
         if self.root.winfo_exists():
-             # Kopie der Liste erstellen, da das Zerstören die Liste während der Iteration ändern kann
-             children = list(self.root.winfo_children())
+             children = list(self.root.winfo_children()) # Create list copy
              for widget in children:
-                  # Prüfen, ob es ein Toplevel ist und noch existiert
                   if isinstance(widget, tk.Toplevel) and widget.winfo_exists():
                        print(f"Destroying other Toplevel: {widget.title()}")
                        try:
                             widget.destroy()
                        except tk.TclError:
-                            # Fehler ignorieren, falls schon zerstört
-                            pass
+                            pass # Ignore error if already destroyed
 
         print("Destroying Tkinter root...")
         try:
-            # Prüfen, ob root noch existiert, bevor destroy aufgerufen wird
-            if self.root.winfo_exists():
-                self.root.destroy()
-                print("Tkinter root destroyed.")
-        except tk.TclError as e:
-            # Fehler abfangen, falls root bereits zerstört wurde
-            print(f"TclError destroying root: {e}")
+            if self.root.winfo_exists(): self.root.destroy(); print("Tkinter root destroyed.")
+        except tk.TclError as e: print(f"TclError destroying root: {e}")
 
         print("Application cleanup finished. Exiting.")
 
-
 # --- Application Entry Point ---
 if __name__ == "__main__":
-    # --- Robust Lock File Handling with PID --- KORRIGIERT ---
+    # --- Robust Lock File Handling with PID ---
     lock_file_path = os.path.join(os.getenv('TEMP', os.getenv('TMP', '/tmp')), 'speedreader_instance.lock')
-    lock_file_handle = None
-    current_pid = os.getpid()
-    app_already_running = False
-
+    lock_file_handle = None; current_pid = os.getpid(); app_already_running = False
     try:
-        # Try to create lock file exclusively
         lock_file_handle = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        # Write current PID to the new lock file
-        try:
-            os.write(lock_file_handle, str(current_pid).encode())
-            print(f"Lock file created: {lock_file_path} with PID: {current_pid}")
-        except OSError as e_write:
-            print(f"Warning: Could not write PID to lock file: {e_write}")
-            # Continue anyway, but lock is less reliable
+        try: os.write(lock_file_handle, str(current_pid).encode()); print(f"Lock file created: {lock_file_path} with PID: {current_pid}")
+        except OSError as e_write: print(f"Warning: Could not write PID to lock file: {e_write}")
     except FileExistsError:
         print(f"Lock file {lock_file_path} exists. Checking PID...")
         old_pid = None
         try:
-            with open(lock_file_path, 'r') as f_lock:
-                pid_str = f_lock.read().strip()
-                if pid_str:
-                    old_pid = int(pid_str)
-        except (IOError, ValueError) as e_read:
-            print(f"Warning: Could not read PID from existing lock file: {e_read}. Assuming stale.")
-            old_pid = None # Treat as stale if unreadable
-
+            with open(lock_file_path, 'r') as f_lock: pid_str = f_lock.read().strip();
+            if pid_str: old_pid = int(pid_str)
+        except (IOError, ValueError) as e_read: print(f"Warning: Could not read PID from lock file: {e_read}. Assuming stale.")
         if old_pid is not None and HAS_PSUTIL:
             try:
                 if psutil.pid_exists(old_pid):
-                    # Check if the process name is similar (optional but good)
                     try:
                          proc = psutil.Process(old_pid)
-                         # Check if proc.name() contains 'python' or the exe name
-                         # This is heuristic and might need adjustment
-                         if 'python' in proc.name().lower() or 'speedreader' in proc.name().lower():
-                              print(f"Another instance is running (PID {old_pid} exists and seems valid). Exiting.")
-                              app_already_running = True
-                         else:
-                              print(f"PID {old_pid} exists but doesn't look like SpeedReader. Assuming stale lock file.")
-                              old_pid = None # Treat as stale
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                         print(f"Process with PID {old_pid} not found or access denied. Assuming stale lock file.")
-                         old_pid = None # Treat as stale
-                else:
-                    print(f"Process with PID {old_pid} not found. Assuming stale lock file.")
-                    old_pid = None # Treat as stale
-            except Exception as e_psutil:
-                 print(f"Error checking PID {old_pid} with psutil: {e_psutil}. Assuming stale.")
-                 old_pid = None # Treat as stale if psutil fails
-
-        elif old_pid is not None and not HAS_PSUTIL:
-             print("Warning: psutil not found. Cannot verify if PID {old_pid} is running. Assuming another instance is running.")
-             app_already_running = True # Safer default without psutil
-
+                         if 'python' in proc.name().lower() or 'speedreader' in proc.name().lower(): print(f"Another instance is running (PID {old_pid} exists). Exiting."); app_already_running = True
+                         else: print(f"PID {old_pid} exists but not SpeedReader. Assuming stale."); old_pid = None
+                    except (psutil.NoSuchProcess, psutil.AccessDenied): print(f"PID {old_pid} not found/access denied. Assuming stale."); old_pid = None
+                else: print(f"PID {old_pid} not found. Assuming stale."); old_pid = None
+            except Exception as e_psutil: print(f"Error checking PID {old_pid}: {e_psutil}. Assuming stale."); old_pid = None
+        elif old_pid is not None and not HAS_PSUTIL: print("Warning: psutil not found. Assuming another instance is running."); app_already_running = True
         if not app_already_running:
-            # Lock file is stale or unreadable, try to remove and recreate
-            try:
-                print("Attempting to remove stale lock file...")
-                os.remove(lock_file_path)
-                lock_file_handle = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(lock_file_handle, str(current_pid).encode())
-                print(f"Recreated lock file with new PID: {current_pid}")
-            except Exception as e_recreate:
-                print(f"Error recreating lock file: {e_recreate}. Potential race condition or permission issue. Exiting.")
-                app_already_running = True # Exit if recreation fails
+            try: print("Attempting to remove stale lock file..."); os.remove(lock_file_path); lock_file_handle = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY); os.write(lock_file_handle, str(current_pid).encode()); print(f"Recreated lock file with new PID: {current_pid}")
+            except Exception as e_recreate: print(f"Error recreating lock file: {e_recreate}. Exiting."); app_already_running = True
+    except Exception as e_lock_init: print(f"Unexpected error during lock file handling: {e_lock_init}"); app_already_running = True
 
-    except Exception as e_lock_init:
-         print(f"Unexpected error during lock file handling: {e_lock_init}")
-         # Decide whether to continue or exit? Let's exit to be safe.
-         app_already_running = True
-
-    # Exit if another instance is confirmed or assumed running
-    if app_already_running:
-         root_check = tk.Tk(); root_check.withdraw(); messagebox.showerror("SpeedReader", "Eine andere Instanz von SpeedReader läuft bereits oder Lock-Datei-Problem."); root_check.destroy(); sys.exit(1)
+    if app_already_running: root_check = tk.Tk(); root_check.withdraw(); messagebox.showerror("SpeedReader", "Eine andere Instanz läuft bereits oder Lock-Datei-Problem."); root_check.destroy(); sys.exit(1)
     # --- End Lock File Handling ---
 
     print("Starting Speed Reader Application...")
     if not HAS_PYNPUT: root_check = tk.Tk(); root_check.withdraw(); messagebox.showerror("Kritischer Fehler", "'pynput' fehlt.\nInstallieren: pip install pynput"); root_check.destroy(); sys.exit("Fehler: pynput nicht gefunden.")
 
-    app = None # Initialize app to None
-    root = tk.Tk()
+    app = None; root = tk.Tk()
     try:
-        app = SpeedReaderApp(root)
-        print("Starting Tkinter main loop...")
-        root.mainloop()
-        print("Mainloop finished normally.")
-
+        # --- Main application execution ---
+        app = SpeedReaderApp(root); print("Starting Tkinter main loop..."); root.mainloop(); print("Mainloop finished normally.")
     except KeyboardInterrupt:
+        # --- Handle Ctrl+C --- KORRIGIERT ---
         print("\nKeyboardInterrupt. Shutting down...")
         if app:
-            try: app.quit_app()
-            except Exception as quit_e: print(f"Error during KeyboardInterrupt shutdown: {quit_e}")
-        elif root.winfo_exists(): root.destroy()
-
+            try:
+                app.quit_app()
+            except Exception as quit_e:
+                print(f"Error during KBI shutdown: {quit_e}")
+        elif 'root' in locals() and root.winfo_exists(): # Check if root exists before destroy
+             root.destroy()
     except Exception as e:
-        print("\nUnhandled exception during initialization or main loop:")
+        # --- Handle other unexpected errors --- KORRIGIERT ---
+        print("\nUnhandled exception:")
         traceback.print_exc()
         if app:
-             try: app.quit_app()
-             except Exception as quit_e: print(f"Error during exception shutdown: {quit_e}")
-        elif root.winfo_exists(): root.destroy()
-
+             try:
+                 app.quit_app()
+             except Exception as quit_e:
+                 print(f"Error during exception shutdown: {quit_e}")
+        elif 'root' in locals() and root.winfo_exists(): # Check if root exists before destroy
+             root.destroy()
     finally:
+        # --- Code that *always* runs after try/except/KeyboardInterrupt ---
         print("Entering final cleanup stage...")
-        # --- Corrected Lock File Cleanup ---
         if lock_file_handle is not None:
               try:
                    os.close(lock_file_handle)
-                   # Check if file still exists before removing (might have been removed if stale)
                    if os.path.exists(lock_file_path):
-                        # Verify PID before removing, just in case another instance started *during* shutdown
                         pid_in_file = -1
                         try:
-                             with open(lock_file_path, 'r') as f_final:
-                                  pid_in_file = int(f_final.read().strip())
-                        except Exception: pass # Ignore read errors here
+                             with open(lock_file_path, 'r') as f_final: pid_in_file = int(f_final.read().strip())
+                        except Exception: pass
+                        if pid_in_file == current_pid: os.remove(lock_file_path); print("Lock file removed.")
+                        else: print(f"Lock file PID ({pid_in_file}) != current PID ({current_pid}). Not removing.")
+                   else: print("Lock file already removed.")
+              except Exception as e_lock: print(f"Error closing/removing lock file: {e_lock}")
 
-                        if pid_in_file == current_pid:
-                             os.remove(lock_file_path)
-                             print("Lock file removed.")
-                        else:
-                             print(f"Lock file PID ({pid_in_file}) doesn't match current PID ({current_pid}). Not removing.")
-                   else:
-                        print("Lock file already removed.")
-
-              except Exception as e_lock:
-                   print(f"Error closing/removing lock file: {e_lock}")
-        # --- End Lock File Cleanup ---
-
+        # Final check if quit_app wasn't called or root still exists
         app_exists = 'app' in locals() and app is not None
         root_still_exists = False
+        # Corrected try/except structure for checking window existence
         if app_exists and hasattr(app, 'root'):
-             try: root_still_exists = app.root.winfo_exists()
-             except Exception: root_still_exists = False
+             try:
+                  root_still_exists = app.root.winfo_exists()
+             except Exception:
+                  root_still_exists = False
         elif 'root' in locals():
-             try: root_still_exists = root.winfo_exists()
-             except Exception: root_still_exists = False
+             try:
+                  root_still_exists = root.winfo_exists()
+             except Exception:
+                  root_still_exists = False
 
+        # Corrected try/except structure for final quit/destroy calls
         if app_exists and hasattr(app, 'is_shutting_down') and not app.is_shutting_down and root_still_exists:
               print("Mainloop finished unexpectedly or quit_app not called, attempting final cleanup...")
-              try: app.quit_app()
-              except Exception as quit_e: print(f"Error during final shutdown check: {quit_e}")
+              try:
+                   app.quit_app()
+              except Exception as quit_e:
+                   print(f"Error during final shutdown check: {quit_e}")
         elif app_exists and hasattr(app, 'is_shutting_down') and app.is_shutting_down:
               print("Shutdown already completed.")
         elif root_still_exists:
              print("App object missing but root exists, destroying root.")
-             try: root.destroy()
-             except Exception: pass
+             try:
+                  root.destroy()
+             except Exception:
+                  pass # Ignore errors destroying potentially broken root
         else:
               print("Application object or root window doesn't exist for final cleanup.")
 
