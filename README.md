@@ -86,8 +86,8 @@ Die App funktioniert **ohne Administratorrechte**, läuft im Hintergrund im Syst
 
 - **Unterstützte Dateiformate**:
   - `.txt`
-  - `.docx` (Microsoft Word)
-  - `.pdf` (benötigt `PyPDF2`)
+  - `.docx`
+  - `.pdf`
 
 ### 🧭 Steuerung im Lesefenster
 
