@@ -32,8 +32,8 @@ def get_appdata_path(filename="speed_reader_settings.json"):
 DEFAULT_SETTINGS = {
     "wpm": 450,
     "pause_punctuation": 0.07, # Sekunden
-    "pause_comma": 0.01,       # Sekunden
-    "pause_paragraph": 0.05,   # Sekunden
+    "pause_comma": 0.02,       # Sekunden
+    "pause_paragraph": 0.09,   # Sekunden
     "font_family": "Segoe UI",
     "font_size": 30,
     "font_color": "#000000",
