@@ -13,14 +13,13 @@ DARK_STATUS_BG = "#3c3f41"; DARK_STATUS_FG = "#bbbbbb"
 DARK_PROGRESS_TROUGH = "#3c3f41"; DARK_PROGRESS_BAR = "#4e7cbf"
 CONTEXT_FG_LIGHT = "#a0a0a0"; CONTEXT_FG_DARK = "#606060" # Context colors
 
-# INITIAL_DELAY_MS constant removed - value now read from config
+# --- Constants ---
+CONTEXT_SNIPPET_WORDS = 7 # Number of words before/after current word/chunk start for snippet
+MAX_SNIPPET_LEN = 120 # Max character length for context snippet label
 
 class ReadingWindow(tk.Toplevel):
     """
-    RSVP window with context display (vertical/horizontal), enhanced navigation,
-    Canvas ORP alignment (fixed point), chunking, dark mode, restart,
-    close on enter at end, initial delay, configurable word length delay,
-    and fixed initial display position.
+    RSVP window with context snippet display only on pause, adjusted height.
     """
     def __init__(self, parent, config_manager):
         super().__init__(parent)
@@ -28,7 +27,8 @@ class ReadingWindow(tk.Toplevel):
         self.config = config_manager
         self.raw_words = []
         self.display_items = []
-        self.item_to_word_start_index = {}
+        # Mapping: item_idx -> (start_raw_word_idx, end_raw_word_idx) - end is exclusive
+        self.item_to_word_indices = {}
         self.current_item_index = 0
         self.paused = False
         self.reading_job = None
@@ -37,13 +37,20 @@ class ReadingWindow(tk.Toplevel):
         self.font_color = "#000000"
         self.highlight_color = "#FF0000"
         self.context_font_color = "#a0a0a0"
+        self.context_snippet_font = None # Font for the snippet label
 
         self.title("Speed Reader")
 
         # --- Window Geometry and Appearance ---
         screen_width = self.winfo_screenwidth(); screen_height = self.winfo_screenheight()
-        width = int(screen_width * 0.6); height = int(screen_height * 0.5)
+        # --- KORRIGIERT: Height proportion slightly increased ---
+        width = int(screen_width * 0.8); height = int(screen_height * 0.6) # Increased from 0.4 to 0.6
         x = (screen_width - width) // 2; y = (screen_height - height) // 2
+        # Set minimum height as well, considering snippet label etc.
+        min_h = 300 # Adjust if needed
+        height = max(height, min_h) # Ensure minimum height
+        y = max(0, (screen_height - height) // 2) # Recalculate y after height adjustment
+
         self.geometry(f"{width}x{height}+{x}+{y}")
         if self.config.get("reader_borderless"): self.overrideredirect(True)
         if self.config.get("reader_always_on_top"): self.attributes('-topmost', True)
@@ -52,17 +59,29 @@ class ReadingWindow(tk.Toplevel):
         # --- Main Frame ---
         self.main_frame = tk.Frame(self); self.main_frame.pack(expand=True, fill="both")
 
+        # --- Configure Grid Layout for main_frame ---
+        self.main_frame.grid_rowconfigure(0, weight=1) # Canvas row expands vertically
+        self.main_frame.grid_rowconfigure(1, weight=0) # Context label row takes needed height
+        self.main_frame.grid_rowconfigure(2, weight=0) # Progress bar row takes needed height
+        self.main_frame.grid_columnconfigure(0, weight=1) # Single column expands horizontally
+
         # --- Word Display Canvas ---
         self.word_display_canvas = tk.Canvas(self.main_frame, bd=0, highlightthickness=0)
-        self.word_display_canvas.pack(expand=True, fill="both", padx=50, pady=50)
+        self.word_display_canvas.grid(row=0, column=0, sticky="nsew", padx=50, pady=(50, 5))
+
+        # --- Context Snippet Label ---
+        self.context_snippet_label = tk.Label(
+            self.main_frame, text="", wraplength=width - 120, justify="center", pady=5
+        )
+        self.context_snippet_label.grid(row=1, column=0, sticky="ew", padx=60, pady=(0, 5))
 
         # --- Progress Bar ---
         self.progress_var = tk.DoubleVar(); self.progress_style = ttk.Style(self)
         self.progress_style.configure("custom.Horizontal.TProgressbar", troughcolor='lightgrey', background='blue')
         self.progress_bar = ttk.Progressbar(self.main_frame, orient="horizontal", mode="determinate", variable=self.progress_var, style="custom.Horizontal.TProgressbar")
-        self.progress_bar.pack(side="bottom", pady=(0, 10), padx=50, fill="x")
+        self.progress_bar.grid(row=2, column=0, sticky="ew", padx=50, pady=(0, 10))
 
-        # --- Status Bar ---
+        # --- Status Bar (remains packed at the bottom of the Toplevel) ---
         self.status_bar_frame = tk.Frame(self); self.status_bar_frame.pack(side="bottom", fill="x")
         left_status_frame = ttk.Frame(self.status_bar_frame); left_status_frame.pack(side="left", padx=10)
         self.restart_button = ttk.Button(left_status_frame, text="Neustart", command=self.restart_reading, width=8); self.restart_button.pack(side="left", padx=(0, 10))
@@ -98,8 +117,18 @@ class ReadingWindow(tk.Toplevel):
         font_family = self.config.get("font_family"); font_size = self.config.get("font_size")
 
         self.configure(bg=bg_color); self.main_frame.configure(bg=bg_color); self.word_display_canvas.configure(bg=bg_color)
-        try: self.widget_font = font.Font(family=font_family, size=font_size)
-        except tk.TclError as e: print(f"Error setting font: {e}. Using default."); self.widget_font = font.nametofont("TkDefaultFont")
+        try:
+            self.widget_font = font.Font(family=font_family, size=font_size)
+            context_font_size = max(8, int(font_size * 0.6))
+            self.context_snippet_font = font.Font(family=font_family, size=context_font_size)
+        except tk.TclError as e:
+            print(f"Error setting font: {e}. Using default.")
+            self.widget_font = font.nametofont("TkDefaultFont")
+            self.context_snippet_font = font.nametofont("TkDefaultFont")
+
+        self.context_snippet_label.configure(font=self.context_snippet_font, fg=self.context_font_color, bg=bg_color)
+        try: self.context_snippet_label.configure(wraplength=self.winfo_width() - 120)
+        except tk.TclError: pass
 
         self.status_bar_frame.configure(bg=status_bg)
         status_style_name = "Status.TLabel"; status_frame_style = "Status.TFrame"
@@ -115,7 +144,7 @@ class ReadingWindow(tk.Toplevel):
 
     def _generate_display_items(self):
         """Groups raw words into chunks and creates index mapping."""
-        self.display_items = []; self.item_to_word_start_index = {}
+        self.display_items = []; self.item_to_word_indices = {}
         chunk_size = self.config.get("chunk_size");
         if chunk_size < 1: chunk_size = 1
         current_chunk_words = []; start_idx_for_current_chunk = 0; word_idx = 0
@@ -124,16 +153,18 @@ class ReadingWindow(tk.Toplevel):
             if word == "__PARAGRAPH__":
                 if current_chunk_words:
                     item_index = len(self.display_items); self.display_items.append(" ".join(current_chunk_words))
-                    self.item_to_word_start_index[item_index] = start_idx_for_current_chunk; current_chunk_words = []
+                    self.item_to_word_indices[item_index] = (start_idx_for_current_chunk, word_idx)
+                    current_chunk_words = []
                 item_index = len(self.display_items); self.display_items.append(word)
-                self.item_to_word_start_index[item_index] = word_idx
+                self.item_to_word_indices[item_index] = (word_idx, word_idx + 1)
                 word_idx += 1; start_idx_for_current_chunk = word_idx
             else:
                 if not current_chunk_words: start_idx_for_current_chunk = word_idx
                 current_chunk_words.append(word); word_idx += 1
                 if len(current_chunk_words) >= chunk_size or word_idx >= len(self.raw_words):
                     item_index = len(self.display_items); self.display_items.append(" ".join(current_chunk_words))
-                    self.item_to_word_start_index[item_index] = start_idx_for_current_chunk; current_chunk_words = []
+                    self.item_to_word_indices[item_index] = (start_idx_for_current_chunk, word_idx)
+                    current_chunk_words = []
 
     def _calculate_delay_ms_for_item(self, item_index):
         """Calculates the display duration in ms for the item, adding extra time for longer items."""
@@ -169,18 +200,21 @@ class ReadingWindow(tk.Toplevel):
         self._generate_display_items()
         if not self.display_items: messagebox.showinfo("Leerer Text", "Keine anzeigbaren Wörter nach Verarbeitung gefunden.", parent=self); self.close_window(); return
 
-        self.restart_reading(update_ui=False)
-        self.update_display_settings()
-        self.current_item_index = 0
-        self.update_progress()
-        self.update_status_bar()
-        self.word_display_canvas.delete("all") # Clear canvas initially
+        self.restart_reading(update_ui=False) # Reset state
+        self.update_display_settings() # Apply theme/fonts
+        self.current_item_index = 0 # Ensure we start at index 0
+        self.update_progress() # Show initial progress (0)
+        self.update_status_bar() # Show initial status (e.g., "Block 1 / ...")
+        # Clear canvas and context snippet initially
+        self.word_display_canvas.delete("all")
+        try:
+            if self.context_snippet_label.winfo_exists(): self.context_snippet_label.config(text="") # KORRIGIERT: Snippet initial leeren
+        except tk.TclError: pass
 
         # Schedule the *first* call to schedule_next_item after delay
         initial_delay = self.config.get("initial_delay_ms")
         print(f"Scheduling reading start after {initial_delay}ms delay...")
         if self.reading_job: self.after_cancel(self.reading_job)
-        # --- NEU: Force update before scheduling ---
         self.update_idletasks()
         self.reading_job = self.after(initial_delay, self.schedule_next_item)
 
@@ -193,12 +227,15 @@ class ReadingWindow(tk.Toplevel):
         self.progress_bar.config(maximum=len(self.display_items))
 
         if update_ui:
-            self.word_display_canvas.delete("all") # Clear canvas
+            # Clear canvas and context snippet
+            self.word_display_canvas.delete("all")
+            try:
+                if self.context_snippet_label.winfo_exists(): self.context_snippet_label.config(text="") # KORRIGIERT: Snippet initial leeren
+            except tk.TclError: pass
             self.update_status_bar()
             # Schedule the first call to schedule_next_item after delay
             initial_delay = self.config.get("initial_delay_ms")
-            # --- NEU: Force update before scheduling ---
-            self.update_idletasks()
+            self.update_idletasks() # Ensure window is processed
             self.reading_job = self.after(initial_delay, self.schedule_next_item)
 
     # Remove _transition_to_item_1 if it exists
@@ -207,36 +244,60 @@ class ReadingWindow(tk.Toplevel):
         """Displays current item, calculates its delay, and schedules the next call."""
         if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
         if self.paused: self.update_status_bar(); return
-
         if self.current_item_index >= len(self.display_items):
             self.display_item("--- Ende ---"); self.progress_var.set(len(self.display_items)); self.update_status_bar(); self.at_end = True; return
 
         self.at_end = False
-        # --- Display current item and update progress ---
-        self.display_item() # Display item at current_item_index
-        self.update_progress()
-        self.update_status_bar() # Update status bar reflecting item just displayed
-
-        # --- Calculate delay for the item just displayed ---
+        self.display_item(); self.update_progress(); self.update_status_bar()
         actual_delay_ms = self._calculate_delay_ms_for_item(self.current_item_index)
-
-        # --- Schedule the NEXT call ---
-        self.current_item_index += 1 # Increment AFTER calculating delay
+        self.current_item_index += 1
         self.reading_job = self.after(actual_delay_ms, self.schedule_next_item)
+
+    def _get_context_snippet(self, current_item_idx):
+        """Generates a text snippet around the current reading position."""
+        safe_idx = max(0, min(current_item_idx, len(self.display_items) - 1))
+        if not self.raw_words or not self.item_to_word_indices or safe_idx not in self.item_to_word_indices: return ""
+        word_indices = self.item_to_word_indices.get(safe_idx);
+        if not word_indices: return ""
+        current_start_word_idx, current_end_word_idx = word_indices
+        center_focus_idx = current_start_word_idx
+        words_before = CONTEXT_SNIPPET_WORDS; words_after = CONTEXT_SNIPPET_WORDS
+        snippet_start_idx = max(0, center_focus_idx - words_before)
+        snippet_end_idx = min(len(self.raw_words), center_focus_idx + words_after + (current_end_word_idx - current_start_word_idx))
+        snippet_words = self.raw_words[snippet_start_idx:snippet_end_idx]
+        processed_snippet = []
+        for i, word in enumerate(snippet_words):
+            actual_word_idx = snippet_start_idx + i
+            is_current = (current_start_word_idx <= actual_word_idx < current_end_word_idx)
+            display_word = "¶" if word == "__PARAGRAPH__" else word
+            if is_current: processed_snippet.append(f"▶{display_word}◀")
+            else: processed_snippet.append(display_word)
+
+        snippet_text = " ".join(processed_snippet)
+
+        if len(snippet_text) > MAX_SNIPPET_LEN:
+            break_point = snippet_text.rfind(" ", 0, MAX_SNIPPET_LEN - 3)
+            if break_point == -1: snippet_text = snippet_text[:MAX_SNIPPET_LEN - 3] + "..."
+            else: snippet_text = snippet_text[:break_point] + " ..."
+        return snippet_text
 
 
     def display_item(self, item=None):
         """Displays item on Canvas, optionally with context, maintaining ORP fixed point."""
         item_to_display = ""; is_special_message = item is not None
         prev_item_context = ""; next_item_context = ""
+        # context_snippet = "" # Snippet wird nur noch bei Pause aktualisiert
+
         safe_current_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
-        if self.at_end: safe_current_idx = len(self.display_items) - 1
+        if self.at_end and len(self.display_items) > 0: safe_current_idx = len(self.display_items) - 1
 
         if not is_special_message:
             if 0 <= self.current_item_index < len(self.display_items):
                  item_to_display = self.display_items[self.current_item_index]
                  if item_to_display == "__PARAGRAPH__": item_to_display = ""
             else: item_to_display = ""
+
+            # --- Get Context Items for Vertical/Horizontal Display ---
             if self.config.get("show_context"):
                 prev_idx = safe_current_idx - 1
                 if 0 <= prev_idx < len(self.display_items):
@@ -251,23 +312,13 @@ class ReadingWindow(tk.Toplevel):
         canvas = self.word_display_canvas; canvas.delete("all")
         if not self.widget_font: self.update_display_settings();
         if not self.widget_font: self.widget_font = font.nametofont("TkDefaultFont")
+        try: canvas_width = canvas.winfo_width(); canvas_height = canvas.winfo_height(); center_x = canvas_width / 2; center_y = canvas_height / 2
+        except tk.TclError: return
 
-        try:
-            # --- NEU: Force update and get dimensions ---
-            canvas.update_idletasks() # Process pending geometry changes
-            canvas_width = canvas.winfo_width(); canvas_height = canvas.winfo_height()
-            center_x = canvas_width / 2; center_y = canvas_height / 2
-            # --- NEU: Debug print ---
-            print(f"Displaying item {self.current_item_index}: '{item_to_display}'. Canvas: {canvas_width}x{canvas_height}, Center: ({center_x}, {center_y})")
-            # Check dimensions again
-            if canvas_width <= 1 or canvas_height <= 1:
-                 print("Warning: Canvas dimensions still too small after update_idletasks.")
-                 # Fallback: Use estimated center based on geometry if winfo fails? Risky.
-                 # For now, let it try to draw at potentially (0.5, 0.5)
+        # --- Update Continuous Context Label - REMOVED from here ---
+        # (wird nur noch in toggle_pause bei self.paused=True gesetzt)
 
-        except tk.TclError: return # Handle error if widget destroyed
-
-        show_context = self.config.get("show_context")
+        show_context_vh = self.config.get("show_context")
         context_layout = self.config.get("context_layout")
         main_word_start_x = center_x; main_word_end_x = center_x; main_word_width_total = 0
 
@@ -298,8 +349,8 @@ class ReadingWindow(tk.Toplevel):
                  main_word_start_x = center_x - main_word_width_total / 2
                  main_word_end_x = center_x + main_word_width_total / 2
 
-        # --- Draw Context ---
-        if show_context and not is_special_message:
+        # --- Draw Vertical/Horizontal Context ---
+        if show_context_vh and not is_special_message:
             try:
                 line_height = self.widget_font.metrics('linespace') * 1.1
                 if context_layout == "vertical":
@@ -349,14 +400,31 @@ class ReadingWindow(tk.Toplevel):
         except tk.TclError: pass
 
     def toggle_pause(self, event=None):
-        """Toggles the paused state."""
+        """Toggles the paused state and updates context snippet accordingly."""
         self.paused = not self.paused
-        if not self.paused:
-             self.at_end = False
-             self.schedule_next_item() # Schedule based on current index
-        else:
-            if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
+        try:
+            if not self.paused:
+                self.at_end = False
+                # --- KORRIGIERT: Snippet leeren beim Fortsetzen ---
+                if self.context_snippet_label.winfo_exists():
+                     self.context_snippet_label.config(text="")
+                self.schedule_next_item() # Schedule based on current index
+            else:
+                # Pause: cancel pending job
+                if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
+                # Update context snippet only if pausing and setting is enabled
+                if self.config.get("show_continuous_context"):
+                     # Use index of item currently shown or last shown
+                     idx_for_snippet = max(0, min(self.current_item_index -1 if not self.at_end else self.current_item_index, len(self.display_items) -1))
+                     snippet = self._get_context_snippet(idx_for_snippet)
+                     if self.context_snippet_label.winfo_exists():
+                           self.context_snippet_label.config(text=snippet)
+        except tk.TclError: pass
+        except Exception as e: print(f"Error in toggle_pause: {e}"); traceback.print_exc()
+
         self.update_status_bar()
+
+    # ... (Rest der Methoden: change_speed, close_window, close_on_enter_at_end, _find_item_index_for_word_index, rewind_to_sentence_start, skip_to_next_sentence_start, increase_speed, decrease_speed bleiben unverändert) ...
 
     def change_speed(self, delta):
         current_wpm = self.config.get("wpm"); new_wpm = max(10, current_wpm + delta)
@@ -364,35 +432,36 @@ class ReadingWindow(tk.Toplevel):
 
     def close_window(self, event=None):
         if self.reading_job: self.after_cancel(self.reading_job); self.reading_job = None
-        self.grab_release(); self.destroy()
+        try: self.grab_release()
+        except tk.TclError: pass
+        self.destroy()
 
     def close_on_enter_at_end(self, event=None):
         if self.at_end: print("Closing window on Enter after end."); self.close_window()
 
     def _find_item_index_for_word_index(self, target_word_index):
         """Finds the display_item index containing the target raw_word index."""
-        if not self.item_to_word_start_index: return 0
+        if not self.item_to_word_indices: return 0
         if target_word_index <= 0: return 0
         target_item_index = 0
-        sorted_map_items = sorted(self.item_to_word_start_index.items(), key=lambda item: item[1])
-        for i, (item_idx, item_start_word) in enumerate(sorted_map_items):
-            if item_start_word <= target_word_index:
-                target_item_index = item_idx
-                next_item_start_word = float('inf')
-                if i + 1 < len(sorted_map_items): next_item_start_word = sorted_map_items[i+1][1]
-                if target_word_index < next_item_start_word: break
-            else:
-                 if i == 0: target_item_index = 0
+        sorted_map_items = sorted(self.item_to_word_indices.items(), key=lambda item: item[1][0])
+        for i, (item_idx, (item_start_word, item_end_word)) in enumerate(sorted_map_items):
+            if item_start_word <= target_word_index < item_end_word:
+                 target_item_index = item_idx; break
+            elif item_start_word > target_word_index:
+                 if i > 0: target_item_index = sorted_map_items[i-1][0]
+                 else: target_item_index = 0
                  break
+            elif i == len(sorted_map_items) - 1: target_item_index = item_idx
         return max(0, min(target_item_index, len(self.display_items) - 1))
 
     def rewind_to_sentence_start(self, event=None):
         """Finds the start of the current/previous sentence and jumps there."""
-        if not self.raw_words or not self.item_to_word_start_index or not self.display_items: return
+        if not self.raw_words or not self.item_to_word_indices or not self.display_items: return
         current_effective_item_index = self.current_item_index
         if not self.paused: current_effective_item_index = max(0, self.current_item_index - 1)
         current_effective_item_index = max(0, min(current_effective_item_index, len(self.display_items) - 1))
-        start_word_idx_of_current_item = self.item_to_word_start_index.get(current_effective_item_index, 0)
+        start_word_idx_of_current_item = self.item_to_word_indices.get(current_effective_item_index, (0,0))[0]
 
         sentence_start_word_idx = 0; search_idx = start_word_idx_of_current_item - 1
         if start_word_idx_of_current_item == 0: search_idx = -1
@@ -421,12 +490,19 @@ class ReadingWindow(tk.Toplevel):
         self.current_item_index = target_item_index
         self.at_end = False
         self.display_item(); self.update_progress(); self.update_status_bar()
+        # Update context snippet after jump when pausing
+        if self.config.get("show_continuous_context"):
+            snippet = self._get_context_snippet(self.current_item_index)
+            try:
+                if self.context_snippet_label.winfo_exists(): self.context_snippet_label.config(text=snippet)
+            except tk.TclError: pass
+
 
     def skip_to_next_sentence_start(self, event=None):
         """Finds the start of the next sentence and jumps there."""
-        if not self.raw_words or not self.item_to_word_start_index or not self.display_items: return
+        if not self.raw_words or not self.item_to_word_indices or not self.display_items: return
         safe_current_idx = max(0, min(self.current_item_index, len(self.display_items) - 1))
-        start_word_idx_of_current_item = self.item_to_word_start_index.get(safe_current_idx, 0)
+        start_word_idx_of_current_item = self.item_to_word_indices.get(safe_current_idx, (0,0))[0]
         if self.current_item_index >= len(self.display_items): return
 
         next_sentence_start_word_idx = len(self.raw_words)
@@ -434,7 +510,7 @@ class ReadingWindow(tk.Toplevel):
         if safe_current_idx < len(self.display_items):
             current_item_is_marker = self.display_items[safe_current_idx] == "__PARAGRAPH__"
             if current_item_is_marker: search_start_idx = start_word_idx_of_current_item + 1
-            else: search_start_idx += len(self.display_items[safe_current_idx].split())
+            else: search_start_idx = self.item_to_word_indices.get(safe_current_idx, (0,0))[1]
         else: search_start_idx = start_word_idx_of_current_item
 
         search_idx = search_start_idx
@@ -455,6 +531,14 @@ class ReadingWindow(tk.Toplevel):
 
         self.at_end = self.current_item_index >= len(self.display_items)
         self.display_item(); self.update_progress(); self.update_status_bar()
+        # Update context snippet after jump when pausing
+        if self.config.get("show_continuous_context"):
+            idx_for_snippet = max(0, min(self.current_item_index, len(self.display_items) -1))
+            snippet = self._get_context_snippet(idx_for_snippet)
+            try:
+                if self.context_snippet_label.winfo_exists(): self.context_snippet_label.config(text=snippet)
+            except tk.TclError: pass
+
 
     def increase_speed(self, event=None): self.change_speed(10)
     def decrease_speed(self, event=None): self.change_speed(-10)
