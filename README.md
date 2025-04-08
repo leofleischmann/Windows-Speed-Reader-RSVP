@@ -1,6 +1,6 @@
 # SpeedReader (RSVP-Anwendung)
 
-**SpeedReader** ist eine einfache, aber leistungsfähige Windows-Anwendung zur Beschleunigung des Lesens mittels **RSVP** (Rapid Serial Visual Presentation). Die Anwendung liest Texte aus der Zwischenablage oder aus Dateien (`.txt`, `.docx`, `.pdf`) und zeigt sie Wort für Wort oder in Wortgruppen an – schnell, fokussiert und augenschonend. SpeedReader läuft dezent im System-Tray und lässt sich bequem per Hotkey steuern.
+**SpeedReader** ist eine einfache, aber leistungsfähige Windows-Anwendung zur Beschleunigung des Lesens mittels **RSVP** (Rapid Serial Visual Presentation). Sie funktioniert auch **ohne Administratorrechte**, liest Texte aus der Zwischenablage oder aus Dateien (`.txt`, `.docx`, `.pdf`) und zeigt sie Wort für Wort oder in Wortgruppen an – schnell, fokussiert und augenschonend. SpeedReader läuft dezent im System-Tray und lässt sich bequem per Hotkey steuern.
 
 ![Screenshot der Anwendung im Lesemodus](example.png)  
 *Ein Rechtsklick auf das Symbol öffnet das Menü.*
