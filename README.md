@@ -105,7 +105,7 @@ Die App funktioniert **ohne Administratorrechte**, läuft im Hintergrund im Syst
 
 ## 💾 Installation
 
-1. Lade die neueste `SpeedReader.exe` von der [Releases-Seite](#) herunter.
+1. Lade die neueste `SpeedReader.exe` von der [Releases-Seite](https://github.com/leofleischmann/Windows-Speed-Reader-RSVP/releases) herunter.
 2. Verschiebe die Datei in einen beliebigen Ordner.
 3. **Starte `SpeedReader.exe`** per Doppelklick.
 4. Die Anwendung startet im Hintergrund und erscheint im Infobereich (Tray).
